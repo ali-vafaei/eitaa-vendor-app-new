@@ -1,0 +1,83 @@
+# Dependencies
+node_modules/
+*/node_modules/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Build outputs
+dist/
+dist-ssr/
+.next/
+out/
+build/
+
+# Environment variables
+*.local
+.env*
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Image files (اما نه SVG icons)
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.bmp
+*.ico
+*.webp
+*.tiff
+
+# Video files
+*.mp4
+*.avi
+*.mov
+*.wmv
+*.flv
+
+# Audio files
+*.mp3
+*.wav
+*.ogg
+
+# Archive files
+*.zip
+*.rar
+*.7z
+*.tar.gz
+
+# Specific large image directories (اما نه فایل‌های SVG در src)
+frontend/public/assets/images/
+frontend/public/assets/banners/
+frontend/public/assets/brands/
+frontend/public/assets/categories/
+frontend/public/assets/faces/
+frontend/public/assets/furniture-products/
+frontend/public/assets/medical/
+frontend/public/assets/models/
+frontend/public/assets/newsletter/
+frontend/public/assets/payment-methods/
+frontend/public/assets/products/
+frontend/public/assets/promotion/
+frontend/public/assets/shops/
+frontend/public/assets/stories/
+
+# Keep essential SVGs but ignore large SVG directories
+!frontend/src/icons/**/*.svg
+!frontend/public/*.svg
+!frontend/public/assets/*.svg
