@@ -43,7 +43,7 @@ export default function ProductRow({ product }: Props) {
 
           <div>
             <Paragraph fontWeight={600}>{name}</Paragraph>
-            <Small color="grey.600">#{id.split("-")[0]}</Small>
+            <Small color="grey.600">#{id}</Small>
           </div>
         </FlexBox>
       </StyledTableCell>

@@ -6,90 +6,80 @@ import Review from "models/Review.model";
 import Product from "models/Product.model";
 import Category from "models/Category.model";
 
-// dashboard
+// dashboard - فعلاً mock می‌مانند
 const getAllCard = cache(async () => {
-  const response = await axios.get("/api/admin/dashboard-cards");
-  return response.data;
+  // اینجا می‌توانید API واقعی بنویسید
+  return [];
 });
 
 const recentPurchase = cache(async () => {
-  const response = await axios.get("/api/admin/recent-purchase");
-  return response.data;
+  return [];
 });
 
 const stockOutProducts = cache(async () => {
-  const response = await axios.get("/api/admin/stock-out-products");
-  return response.data;
+  return [];
 });
 
-// products
+// products - متصل به بک‌اند واقعی
 const products = cache(async (): Promise<Product[]> => {
-  const response = await axios.get("/api/admin/products");
+  const response = await axios.get("/api/products");
   return response.data;
 });
 
 const category = cache(async (): Promise<Category[]> => {
-  const response = await axios.get("/api/admin/category");
-  return response.data;
+  // فعلاً خالی - می‌توانید بعداً API کتگوری اضافه کنید
+  return [];
 });
 
 const brands = cache(async (): Promise<Brand[]> => {
-  const response = await axios.get("/api/admin/brands");
-  return response.data;
+  // فعلاً خالی - می‌توانید بعداً API برند اضافه کنید
+  return [];
 });
 
 const reviews = cache(async (): Promise<Review[]> => {
-  const response = await axios.get("/api/admin/reviews");
-  return response.data;
+  // فعلاً خالی - می‌توانید بعداً API ریویو اضافه کنید
+  return [];
 });
 
-// orders
+// orders - متصل به بک‌اند واقعی
 const orders = cache(async (): Promise<Order[]> => {
-  const response = await axios.get("/api/admin/orders");
+  const response = await axios.get("/api/orders");
   return response.data;
 });
 
 const getOrder = cache(async (id: string): Promise<Order> => {
-  const response = await axios.get("/api/admin/orders/1", { params: { id } });
+  const response = await axios.get(`/api/orders/${id}`);
   return response.data;
 });
 
-// customers
+// customers - فعلاً mock
 const customers = cache(async () => {
-  const response = await axios.get("/api/admin/customers");
-  return response.data;
+  return [];
 });
 
-// refund request
+// سایر موارد - فعلاً mock
 const refundRequests = cache(async () => {
-  const response = await axios.get("/api/admin/refund-requests");
-  return response.data;
+  return [];
 });
 
-// sellers
 const sellers = cache(async () => {
-  const response = await axios.get("/api/admin/sellers");
-  return response.data;
+  return [];
 });
 
 const packagePayments = cache(async () => {
-  const response = await axios.get("/api/admin/package-payments");
-  return response.data;
+  return [];
 });
 
 const earningHistory = cache(async () => {
-  const response = await axios.get("/api/admin/earning-history");
-  return response.data;
+  return [];
 });
 
 const payouts = cache(async () => {
-  const response = await axios.get("/api/admin/payouts");
-  return response.data;
+  return [];
 });
 
 const payoutRequests = cache(async () => {
-  const response = await axios.get("/api/admin/payout-requests");
-  return response.data;
+  return [];
 });
 
 export default {

@@ -1,6 +1,4 @@
-// فایل: src/app/(admin-dashboard)/admin/products/create/page.tsx
-
-"use client"; // برای فعال کردن منطق سمت کلاینت
+"use client";
 
 import { useRouter } from "next/navigation";
 import { useSnackbar } from "notistack";
@@ -10,40 +8,42 @@ const ProductCreate = () => {
   const router = useRouter();
   const { enqueueSnackbar } = useSnackbar();
 
-  // این تابع مسئول ارسال اطلاعات فرم به بک‌اند شماست
+  // تابع ذخیره محصول با کد کامل و درست
   const handleSaveProduct = async (values: any) => {
-    // !!! مهم: آدرس IP مک‌بوک خود را اینجا وارد کنید
-    const YOUR_MAC_IP = "192.168.1.5";
-    const BACKEND_URL = `http://${YOUR_MAC_IP}:4000/api/products`;
+    console.log('💾 Saving product with values:', values);
 
     try {
-      const response = await fetch(BACKEND_URL, {
+      const response = await fetch('http://localhost:4000/api/products', {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
-          name: values.name,
+          name: values.name || values.title,
           price: Number(values.price),
-          stock: Number(values.stock),
-          image_url: values.image_url || "https://via.placeholder.com/300",
+          stock: Number(values.stock || 0),
+          thumbnail: values.thumbnail || values.image || "https://via.placeholder.com/300",
+          brand: values.brand || "Unknown",
+          categories: Array.isArray(values.categories) ? values.categories : [values.category || "General"],
+          slug: values.slug || (values.name || values.title)?.toLowerCase().replace(/\s+/g, '-') + '-' + Date.now()
         }),
       });
 
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.message || "خطا در ذخیره محصول در بک‌اند");
+        throw new Error(result.message || "خطا در ذخیره محصول");
       }
 
       enqueueSnackbar("محصول جدید با موفقیت اضافه شد!", { variant: "success" });
       router.push("/admin/products");
 
     } catch (error: any) {
-      console.error("خطا در ارتباط با بک‌اند:", error);
-      enqueueSnackbar(error.message, { variant: "error" });
+      console.error("❌ خطا در ارتباط با بک‌اند:", error);
+      enqueueSnackbar(error.message || "خطا در ارتباط با سرور", { variant: "error" });
     }
   };
 
-  // تابع handleSaveProduct را به عنوان پراپ onSave به کامپوننت ویو پاس می‌دهیم
   return <ProductCreatePageView onSave={handleSaveProduct} />;
 };
 

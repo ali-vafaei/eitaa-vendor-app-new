@@ -1,18 +1,17 @@
-// فایل: src/pages-sections/vendor-dashboard/products/page-view/product-create.tsx
-
 // LOCAL CUSTOM COMPONENT
 import ProductForm from "../product-form";
 import PageWrapper from "../../page-wrapper";
 
-// تعریف می‌کنیم که این کامپوننت یک پراپ به نام onSave دریافت می‌کند
+// تعریف Props برای onSave
 type Props = {
   onSave: (values: any) => Promise<void>;
 };
 
-export function ProductCreatePageView({ onSave }: Props) {
+// تغییر از named export به default export
+export default function ProductCreatePageView({ onSave }: Props) {
   return (
     <PageWrapper title="Add New Product">
-      {/* پراپ onSave دریافتی را مستقیماً به ProductForm می‌دهیم */}
+      {/* پراپ onSave را به ProductForm پاس می‌دهیم */}
       <ProductForm onSave={onSave} />
     </PageWrapper>
   );
