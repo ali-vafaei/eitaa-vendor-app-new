@@ -55,7 +55,7 @@ export default function ProductForm({ productToEdit, onSave, onCancel }: Props) 
   const handleFormSubmit = async (values: any, { setSubmitting }: any) => {
     try {
       setApiError("");
-      setSubmetting(true);
+      setSubmitting(true);
       await onSave(values);
     } catch (error: any) {
       setApiError(error.message || "خطا در ذخیره محصول");
