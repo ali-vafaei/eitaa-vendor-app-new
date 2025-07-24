@@ -1,6 +1,9 @@
+// فایل: src/pages-sections/vendor-dashboard/products/product-form.tsx
+// برگرداندن به حالت اصلی template:
+
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Box from "@mui/material/Box";
 import Card from "@mui/material/Card";
 import Grid from "@mui/material/Grid";
@@ -9,17 +12,17 @@ import MenuItem from "@mui/material/MenuItem";
 import TextField from "@mui/material/TextField";
 import { Formik } from "formik";
 import * as yup from "yup";
+import { Alert } from "@mui/material";
 // GLOBAL CUSTOM COMPONENTS
 import DropZone from "components/DropZone";
 import { FlexBox } from "components/flex-box";
 // STYLED COMPONENTS
 import { UploadImageBox, StyledClear } from "../styles";
-import { Alert } from "@mui/material";
 
-// FORM FIELDS VALIDATION SCHEMA
+// FORM FIELDS VALIDATION SCHEMA (اصلی)
 const VALIDATION_SCHEMA = yup.object().shape({
   name: yup.string().required("Name is required!"),
-  category: yup.string().optional(), // 🔥 تغییر: از array به string
+  category: yup.array(yup.string()).optional(), // ✅ array همان‌طور که در اصل بود
   description: yup.string().optional(),
   stock: yup.number().required("Stock is required!"),
   price: yup.number().required("Price is required!"),
@@ -27,13 +30,11 @@ const VALIDATION_SCHEMA = yup.object().shape({
   brand: yup.string().optional(),
 });
 
-// ================================================================
 interface Props {
   productToEdit?: any;
-  onSave: (product: any) => void | Promise<void>; // 🔥 تغییر: قبول Promise هم
-  onCancel?: () => void; // 🔥 تغییر: اختیاری
+  onSave: (product: any) => void | Promise<void>;
+  onCancel?: () => void;
 }
-// ================================================================
 
 export default function ProductForm({ productToEdit, onSave, onCancel }: Props) {
   const [apiError, setApiError] = useState("");
@@ -43,7 +44,7 @@ export default function ProductForm({ productToEdit, onSave, onCancel }: Props) 
     brand: productToEdit?.brand || "",
     stock: productToEdit?.stock || "",
     price: productToEdit?.price || "",
-    category: productToEdit?.categories || "", // 🔥 تغییر: string نه array
+    category: productToEdit?.categories || [], // ✅ array همان‌طور که در اصل بود
     sale_price: productToEdit?.sale_price || "",
     description: productToEdit?.description || "",
     thumbnail: productToEdit?.thumbnail || "",
@@ -51,15 +52,11 @@ export default function ProductForm({ productToEdit, onSave, onCancel }: Props) 
     published: productToEdit?.published ?? true,
   };
 
-  // 🔥 تابع ساده‌تر برای compatibility
   const handleFormSubmit = async (values: any, { setSubmitting }: any) => {
     try {
       setApiError("");
-      setSubmitting(true);
-
-      // ✅ فراخوانی مستقیم onSave با values
+      setSubmetting(true);
       await onSave(values);
-
     } catch (error: any) {
       setApiError(error.message || "خطا در ذخیره محصول");
     } finally {
@@ -88,7 +85,6 @@ export default function ProductForm({ productToEdit, onSave, onCancel }: Props) 
       >
         {({ values, errors, touched, handleChange, handleBlur, handleSubmit, isSubmitting }) => (
           <form onSubmit={handleSubmit}>
-            {/* نمایش خطای API */}
             {apiError && <Alert severity="error" sx={{ mb: 2 }}>{apiError}</Alert>}
 
             <Grid container spacing={3}>
@@ -96,10 +92,10 @@ export default function ProductForm({ productToEdit, onSave, onCancel }: Props) 
                 <TextField
                   fullWidth
                   name="name"
-                  label="نام محصول"
+                  label="Name"
                   color="info"
                   size="medium"
-                  placeholder="نام محصول"
+                  placeholder="Name"
                   value={values.name}
                   onBlur={handleBlur}
                   onChange={handleChange}
@@ -117,20 +113,20 @@ export default function ProductForm({ productToEdit, onSave, onCancel }: Props) 
                   size="medium"
                   name="category"
                   onBlur={handleBlur}
-                  placeholder="دسته‌بندی"
+                  placeholder="Category"
                   onChange={handleChange}
                   value={values.category}
-                  label="دسته‌بندی"
+                  label="Select Category"
+                  SelectProps={{ multiple: true }} // ✅ multiple selection
                   error={Boolean(touched.category && errors.category)}
                   helperText={(touched.category && errors.category) as string}
                   disabled={isSubmitting}
                 >
-                  <MenuItem value="">انتخاب کنید</MenuItem>
-                  <MenuItem value="electronics">الکترونیک</MenuItem>
-                  <MenuItem value="fashion">مد و پوشاک</MenuItem>
-                  <MenuItem value="books">کتاب</MenuItem>
-                  <MenuItem value="home">خانه و آشپزخانه</MenuItem>
-                  <MenuItem value="sports">ورزش</MenuItem>
+                  <MenuItem value="electronics">Electronics</MenuItem>
+                  <MenuItem value="fashion">Fashion</MenuItem>
+                  <MenuItem value="books">Books</MenuItem>
+                  <MenuItem value="home">Home & Kitchen</MenuItem>
+                  <MenuItem value="sports">Sports</MenuItem>
                 </TextField>
               </Grid>
 
@@ -138,10 +134,10 @@ export default function ProductForm({ productToEdit, onSave, onCancel }: Props) 
                 <TextField
                   fullWidth
                   name="brand"
-                  label="برند"
+                  label="Brand"
                   color="info"
                   size="medium"
-                  placeholder="برند محصول"
+                  placeholder="Brand"
                   onBlur={handleBlur}
                   value={values.brand}
                   onChange={handleChange}
@@ -155,7 +151,7 @@ export default function ProductForm({ productToEdit, onSave, onCancel }: Props) 
                 <TextField
                   fullWidth
                   name="thumbnail"
-                  label="آدرس تصویر"
+                  label="Image URL"
                   color="info"
                   size="medium"
                   placeholder="https://example.com/image.jpg"
@@ -166,18 +162,15 @@ export default function ProductForm({ productToEdit, onSave, onCancel }: Props) 
                 />
               </Grid>
 
-              {/* بخش آپلود تصویر - اختیاری */}
               <Grid item xs={12}>
                 <DropZone onChange={(files) => handleChangeDropZone(files)} />
                 <FlexBox flexDirection="row" mt={2} flexWrap="wrap" gap={1}>
-                  {files.map((file, index) => {
-                    return (
-                      <UploadImageBox key={index}>
-                        <Box component="img" src={file.preview} width="100%" />
-                        <StyledClear onClick={handleFileDelete(file)} />
-                      </UploadImageBox>
-                    );
-                  })}
+                  {files.map((file, index) => (
+                    <UploadImageBox key={index}>
+                      <Box component="img" src={file.preview} width="100%" />
+                      <StyledClear onClick={handleFileDelete(file)} />
+                    </UploadImageBox>
+                  ))}
                 </FlexBox>
               </Grid>
 
@@ -189,10 +182,10 @@ export default function ProductForm({ productToEdit, onSave, onCancel }: Props) 
                   color="info"
                   size="medium"
                   name="description"
-                  label="توضیحات"
+                  label="Description"
                   onBlur={handleBlur}
                   onChange={handleChange}
-                  placeholder="توضیحات محصول..."
+                  placeholder="Description"
                   value={values.description}
                   helperText={touched.description && errors.description}
                   error={Boolean(touched.description && errors.description)}
@@ -209,9 +202,9 @@ export default function ProductForm({ productToEdit, onSave, onCancel }: Props) 
                   type="number"
                   onBlur={handleBlur}
                   value={values.price}
-                  label="قیمت (تومان)"
+                  label="Regular Price"
                   onChange={handleChange}
-                  placeholder="0"
+                  placeholder="Regular Price"
                   helperText={touched.price && errors.price}
                   error={Boolean(touched.price && errors.price)}
                   disabled={isSubmitting}
@@ -225,8 +218,8 @@ export default function ProductForm({ productToEdit, onSave, onCancel }: Props) 
                   color="info"
                   size="medium"
                   type="number"
-                  label="موجودی"
-                  placeholder="0"
+                  label="Stock"
+                  placeholder="Stock"
                   onBlur={handleBlur}
                   value={values.stock}
                   onChange={handleChange}
@@ -243,10 +236,10 @@ export default function ProductForm({ productToEdit, onSave, onCancel }: Props) 
                   size="medium"
                   type="number"
                   name="sale_price"
-                  label="قیمت با تخفیف (اختیاری)"
+                  label="Sale Price"
                   onBlur={handleBlur}
                   onChange={handleChange}
-                  placeholder="0"
+                  placeholder="Sale Price"
                   value={values.sale_price}
                   helperText={touched.sale_price && errors.sale_price}
                   error={Boolean(touched.sale_price && errors.sale_price)}
@@ -262,7 +255,7 @@ export default function ProductForm({ productToEdit, onSave, onCancel }: Props) 
                     type="submit"
                     disabled={isSubmitting}
                   >
-                    {isSubmitting ? "در حال ذخیره..." : "ذخیره محصول"}
+                    {isSubmitting ? "Saving..." : "Save product"}
                   </Button>
 
                   {onCancel && (
@@ -272,7 +265,7 @@ export default function ProductForm({ productToEdit, onSave, onCancel }: Props) 
                       onClick={onCancel}
                       disabled={isSubmitting}
                     >
-                      انصراف
+                      Cancel
                     </Button>
                   )}
                 </Box>

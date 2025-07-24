@@ -1,5 +1,3 @@
-// فایل: src/app/(admin-dashboard)/admin/products/[slug]/page.tsx
-
 "use client";
 
 import { useEffect, useState } from "react";
@@ -19,19 +17,22 @@ export default function EditProductPage() {
   useEffect(() => {
     const fetchProduct = async () => {
       try {
-        // 🔥 استفاده از ID برای fetch کردن
         const productId = params.slug; // در واقع این ID است
+        console.log('🔍 Fetching product with ID:', productId);
+
         const response = await fetch(`http://localhost:4000/api/products/${productId}`);
 
         if (!response.ok) {
-          throw new Error('محصول یافت نشد');
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.message || `محصول یافت نشد (${response.status})`);
         }
+
         const productData = await response.json();
-        console.log('📦 Product loaded:', productData); // برای debug
+        console.log('📦 Product loaded:', productData);
         setProduct(productData);
       } catch (error) {
-        console.error('خطا در بارگذاری محصول:', error);
-        enqueueSnackbar('خطا در بارگذاری محصول', { variant: 'error' });
+        console.error('❌ خطا در بارگذاری محصول:', error);
+        enqueueSnackbar(error.message || 'خطا در بارگذاری محصول', { variant: 'error' });
         router.push('/admin/products');
       } finally {
         setLoading(false);
@@ -45,56 +46,109 @@ export default function EditProductPage() {
 
   // ذخیره تغییرات محصول
   const handleSaveProduct = async (values: any) => {
-    try {
-      // 🔥 ایجاد slug جدید با timestamp برای جلوگیری از تکرار
-      const timestamp = Date.now();
-      const baseSlug = values.name.toLowerCase()
-        .replace(/[^a-z0-9\s]/g, '') // حذف کاراکترهای خاص
-        .replace(/\s+/g, '-') // جایگزینی فاصله با -
-        .trim();
-      const uniqueSlug = `${baseSlug}-${timestamp}`;
+    console.log('💾 Updating product with values:', values);
+    console.log('📋 Current product:', product);
 
-      const productId = params.slug; // ID محصول
+    try {
+      // ✅ validation
+      if (!values.name || !values.name.trim()) {
+        throw new Error('نام محصول الزامی است');
+      }
+      if (!values.price || Number(values.price) <= 0) {
+        throw new Error('قیمت باید بیشتر از صفر باشد');
+      }
+      if (values.stock === undefined || Number(values.stock) < 0) {
+        throw new Error('موجودی نمی‌تواند منفی باشد');
+      }
+
+      // ✅ ایجاد slug بهتر
+      const generateSlug = (name: string) => {
+        const baseSlug = name
+          .toLowerCase()
+          .trim()
+          .replace(/[^a-z0-9\s-]/g, '')
+          .replace(/\s+/g, '-')
+          .replace(/-+/g, '-')
+          .replace(/^-|-$/g, '');
+
+        const timestamp = Date.now();
+        return `${baseSlug || 'product'}-${timestamp}`;
+      };
+
+      const productData = {
+        name: values.name.trim(),
+        price: Number(values.price),
+        stock: Number(values.stock),
+        brand: values.brand || '',
+       categories: Array.isArray(values.category) ? values.category : [], // ✅ اطمینان از array بودن
+        slug: generateSlug(values.name),
+        thumbnail: values.thumbnail || "https://via.placeholder.com/300.png?text=" + encodeURIComponent(values.name),
+        published: product?.published ?? true, // حفظ وضعیت قبلی
+      };
+
+      console.log('📤 Sending update data:', productData);
+
+      const productId = params.slug;
       const response = await fetch(`http://localhost:4000/api/products/${productId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: values.name,
-          price: Number(values.price),
-          stock: Number(values.stock),
-          brand: values.brand || '',
-          categories: values.category || '',
-          slug: uniqueSlug, // 🔥 slug یکتا
-          thumbnail: values.thumbnail || "https://via.placeholder.com/300.png?text=" + encodeURIComponent(values.name),
-          published: product?.published ?? true, // حفظ وضعیت قبلی
-        }),
+        body: JSON.stringify(productData),
       });
 
+      console.log('📡 Response status:', response.status);
       const result = await response.json();
+      console.log('📦 Server response:', result);
 
       if (!response.ok) {
-        throw new Error(result.message || "خطا در ویرایش محصول");
+        throw new Error(result.message || `خطای سرور: ${response.status}`);
       }
 
       enqueueSnackbar("محصول با موفقیت ویرایش شد!", { variant: "success" });
-      router.push("/admin/products");
+
+      // ✅ کمی تأخیر برای نمایش پیام
+      setTimeout(() => {
+        router.push("/admin/products");
+      }, 1000);
 
     } catch (error: any) {
-      console.error("خطا در ویرایش محصول:", error);
-      enqueueSnackbar(error.message, { variant: "error" });
+      console.error("❌ خطا در ویرایش محصول:", error);
+
+      // ✅ پیام خطای بهتر
+      let errorMessage = "خطا در ویرایش محصول";
+
+      if (error.message.includes('fetch')) {
+        errorMessage = "خطا در ارتباط با سرور";
+      } else if (error.message.includes('slug')) {
+        errorMessage = "مشکل در نام محصول";
+      } else {
+        errorMessage = error.message || "خطای نامشخص";
+      }
+
+      enqueueSnackbar(errorMessage, { variant: "error" });
     }
   };
 
   // لغو ویرایش
   const handleCancel = () => {
-    router.push("/admin/products");
+    const shouldCancel = window.confirm('آیا مطمئن هستید؟ تغییرات ذخیره نشده از بین می‌رود.');
+    if (shouldCancel) {
+      router.push("/admin/products");
+    }
   };
 
   if (loading) {
     return (
       <PageWrapper title="در حال بارگذاری...">
-        <div style={{ padding: '2rem', textAlign: 'center' }}>
-          در حال بارگذاری اطلاعات محصول...
+        <div style={{
+          padding: '3rem',
+          textAlign: 'center',
+          fontSize: '1.1rem',
+          color: '#666'
+        }}>
+          <div>در حال بارگذاری اطلاعات محصول...</div>
+          <div style={{ marginTop: '1rem', fontSize: '0.9rem' }}>
+            لطفاً صبر کنید
+          </div>
         </div>
       </PageWrapper>
     );
@@ -103,8 +157,16 @@ export default function EditProductPage() {
   if (!product) {
     return (
       <PageWrapper title="خطا">
-        <div style={{ padding: '2rem', textAlign: 'center', color: 'red' }}>
-          محصول یافت نشد
+        <div style={{
+          padding: '3rem',
+          textAlign: 'center',
+          color: '#d32f2f',
+          fontSize: '1.1rem'
+        }}>
+          <div>❌ محصول یافت نشد</div>
+          <div style={{ marginTop: '1rem', fontSize: '0.9rem', color: '#666' }}>
+            ممکن است محصول حذف شده یا ID آن اشتباه باشد
+          </div>
         </div>
       </PageWrapper>
     );
