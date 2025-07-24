@@ -50,7 +50,7 @@ export default function Topbar({ bgColor }: Props) {
     i18n.changeLanguage(language);
   };
 
-  const selectedLanguage = languageOptions[i18n.language];
+const selectedLanguage = languageOptions[i18n.language] || languageOptions.en;
 
   return (
     <StyledRoot bgColor={bgColor} expand={expand ? 1 : 0}>

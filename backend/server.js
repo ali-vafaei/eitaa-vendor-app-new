@@ -14,7 +14,7 @@ app.use(cors({
     'http://localhost:8080',
     'http://127.0.0.1:3000',
     'http://127.0.0.1:5173',
-    'http://localhost:3001'  // اضافه شد
+    'http://localhost:3001'
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization'],
@@ -28,7 +28,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// تنظیمات پایگاه داده - اصلاح شده ✅
+// تنظیمات پایگاه داده
 const pool = new Pool({
   user: 'vafaei',
   host: 'localhost',
@@ -38,7 +38,6 @@ const pool = new Pool({
 });
 
 // تست اتصال دیتابیس
-
 pool.connect((err) => {
   if (err) {
     console.error('❌ Database connection error:', err);
@@ -46,7 +45,6 @@ pool.connect((err) => {
     console.log('✅ Database connected successfully!');
   }
 });
-
 
 // --- route تست API ها ---
 app.get('/api/test', (req, res) => {
@@ -61,14 +59,37 @@ app.get('/api/test', (req, res) => {
   });
 });
 
+// چک کردن ساختار دیتابیس
+app.get('/api/check-table', (req, res) => {
+  pool.query(`
+    SELECT column_name, data_type, is_nullable, column_default 
+    FROM information_schema.columns 
+    WHERE table_name = 'products'
+    ORDER BY ordinal_position
+  `)
+  .then(tableInfo => {
+    return pool.query('SELECT COUNT(*) FROM products')
+      .then(countResult => {
+        res.status(200).json({
+          tableStructure: tableInfo.rows,
+          totalRecords: parseInt(countResult.rows[0].count),
+          message: 'Table structure checked successfully'
+        });
+      });
+  })
+  .catch(err => {
+    console.error('Error checking table:', err.message);
+    res.status(500).json({ message: 'خطا در چک کردن جدول' });
+  });
+});
+
+// ایجاد ادمین تست
 app.post('/api/create-admin', async (req, res) => {
   try {
     const email = 'admin@test.com';
     const password = 'secret';
-
     const password_hash = await bcrypt.hash(password, 10);
 
-    // حذف کاربر قبلی و ساخت جدید
     await pool.query('DELETE FROM sellers WHERE email = $1', [email]);
     const result = await pool.query(
       'INSERT INTO sellers (email, password_hash) VALUES ($1, $2) RETURNING *',
@@ -79,14 +100,13 @@ app.post('/api/create-admin', async (req, res) => {
       message: 'Admin user created successfully',
       credentials: { email, password }
     });
-
   } catch (error) {
     console.error('Error creating admin:', error);
     res.status(500).json({ message: error.message });
   }
 });
 
-// --- بخش احراز هویت - اصلاح شده ✅ ---
+// --- بخش احراز هویت ---
 app.post('/api/auth/register', async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) {
@@ -111,7 +131,7 @@ app.post('/api/auth/register', async (req, res) => {
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
 
-  // Admin bypass - حل مشکل bcrypt ✅
+  // Admin bypass
   if (email === 'admin@test.com' && password === 'secret') {
     return res.status(200).json({
       message: 'ورود موفقیت‌آمیز بود!',
@@ -143,227 +163,284 @@ app.post('/api/auth/login', async (req, res) => {
 
 // --- بخش مدیریت محصولات ---
 
-// دریافت تمام محصولات
+// دریافت محصولات منتشر شده
 app.get('/api/products', async (req, res) => {
-    try {
-        console.log('🔍 Fetching PUBLISHED products...');
-        // اضافه کردن شرط بهتر برای published
-        const result = await pool.query('SELECT * FROM products WHERE published = true OR published IS NULL ORDER BY id DESC');
-        console.log(`📦 Found ${result.rows.length} published products`);
+  try {
+    console.log('🔍 Fetching PUBLISHED products...');
+    const result = await pool.query('SELECT * FROM products WHERE published = true OR published IS NULL ORDER BY id DESC');
+    console.log(`📦 Found ${result.rows.length} published products`);
 
-        const productsForFrontend = result.rows.map(p => ({
-            ...p,
-            title: p.name,
-            published: p.published !== false
-        }));
+    const productsForFrontend = result.rows.map(p => ({
+      ...p,
+      title: p.name,
+      published: p.published !== false
+    }));
 
-        res.status(200).json(productsForFrontend);
-    } catch (err) {
-        console.error('Error in /api/products:', err.message);
-        res.status(500).json({ message: 'خطا در ارتباط با پایگاه داده' });
-    }
+    res.status(200).json(productsForFrontend);
+  } catch (err) {
+    console.error('Error in /api/products:', err.message);
+    res.status(500).json({ message: 'خطا در ارتباط با پایگاه داده' });
+  }
+});
+
+// دریافت همه محصولات (منتشر و غیرمنتشر)
+app.get('/api/products/all', async (req, res) => {
+  try {
+    console.log('🔍 Fetching ALL products...');
+    const result = await pool.query('SELECT * FROM products ORDER BY id DESC');
+    console.log(`📦 Found ${result.rows.length} products total`);
+
+    const productsForFrontend = result.rows.map(p => ({
+      ...p,
+      title: p.name,
+      published: p.published !== false
+    }));
+
+    res.status(200).json(productsForFrontend);
+  } catch (err) {
+    console.error('Error in /api/products/all:', err.message);
+    res.status(500).json({ message: 'خطا در ارتباط با پایگاه داده' });
+  }
+});
+
+// دریافت محصولات پیش‌نویس
+app.get('/api/products/drafts', async (req, res) => {
+  try {
+    console.log('🔍 Fetching DRAFT products...');
+    const result = await pool.query('SELECT * FROM products WHERE published = false ORDER BY id DESC');
+    console.log(`📦 Found ${result.rows.length} draft products`);
+
+    const productsForFrontend = result.rows.map(p => ({
+      ...p,
+      title: p.name,
+      published: Boolean(p.published)
+    }));
+
+    res.status(200).json(productsForFrontend);
+  } catch (err) {
+    console.error('Error in /api/products/drafts:', err.message);
+    res.status(500).json({ message: 'خطا در ارتباط با پایگاه داده' });
+  }
+});
+
+// جستجو در محصولات
+app.get('/api/products/search/:query', async (req, res) => {
+  const { query } = req.params;
+  try {
+    const result = await pool.query(`
+      SELECT * FROM products 
+      WHERE (name ILIKE $1 OR brand ILIKE $1 OR categories ILIKE $1)
+      AND published = true
+      ORDER BY name ASC
+    `, [`%${query}%`]);
+    res.status(200).json(result.rows);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'خطا در جستجو' });
+  }
 });
 
 // دریافت یک محصول بر اساس ID
-
-// ✅ ابتدا route های مشخص:
-app.get('/api/products/all', async (req, res) => {
-    try {
-        console.log('🔍 Fetching ALL products...');
-        const result = await pool.query('SELECT * FROM products ORDER BY id DESC');
-        console.log(`📦 Found ${result.rows.length} products total`);
-
-        const productsForFrontend = result.rows.map(p => ({
-            ...p,
-            title: p.name,
-            published: p.published !== false
-        }));
-
-        res.status(200).json(productsForFrontend);
-    } catch (err) {
-        console.error('Error in /api/products/all:', err.message);
-        res.status(500).json({ message: 'خطا در ارتباط با پایگاه داده' });
-    }
-});
-
-app.get('/api/products/drafts', async (req, res) => {
-    try {
-        console.log('🔍 Fetching DRAFT products...');
-        const result = await pool.query('SELECT * FROM products WHERE published = false ORDER BY id DESC');
-        console.log(`📦 Found ${result.rows.length} draft products`);
-
-        const productsForFrontend = result.rows.map(p => ({
-            ...p,
-            title: p.name,
-            published: Boolean(p.published)
-        }));
-
-        res.status(200).json(productsForFrontend);
-    } catch (err) {
-        console.error('Error in /api/products/drafts:', err.message);
-        res.status(500).json({ message: 'خطا در ارتباط با پایگاه داده' });
-    }
-});
-
-app.get('/api/products/search/:query', async (req, res) => {
-    const { query } = req.params;
-    try {
-        const result = await pool.query(`
-            SELECT * FROM products 
-            WHERE name ILIKE $1 OR brand ILIKE $1 OR categories ILIKE $1
-            AND published = true
-            ORDER BY name ASC
-        `, [`%${query}%`]);
-        res.status(200).json(result.rows);
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).json({ message: 'خطا در جستجو' });
-    }
-});
-
-// ✅ سپس route با parameter:
 app.get('/api/products/:id', async (req, res) => {
-    const { id } = req.params;
-    try {
-        const result = await pool.query('SELECT * FROM products WHERE id = $1', [id]);
-        if (result.rows.length === 0) {
-            return res.status(404).json({ message: 'محصول پیدا نشد' });
-        }
-        const product = {...result.rows[0], title: result.rows[0].name};
-        res.status(200).json(product);
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).json({ message: 'خطا در دریافت محصول' });
+  const { id } = req.params;
+  try {
+    const result = await pool.query('SELECT * FROM products WHERE id = $1', [id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'محصول پیدا نشد' });
     }
+    const product = { ...result.rows[0], title: result.rows[0].name };
+    res.status(200).json(product);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'خطا در دریافت محصول' });
+  }
 });
 
 // افزودن محصول جدید
 app.post('/api/products', async (req, res) => {
-    const { name, price, stock, thumbnail, brand, categories, slug } = req.body;
-    if (!name || !price || stock === undefined) {
-        return res.status(400).json({ message: 'نام، قیمت و موجودی الزامی هستند.' });
+  const { name, price, stock, thumbnail, brand, categories, slug } = req.body;
+  if (!name || !price || stock === undefined) {
+    return res.status(400).json({ message: 'نام، قیمت و موجودی الزامی هستند.' });
+  }
+  try {
+    const result = await pool.query(
+      'INSERT INTO products (name, price, stock, thumbnail, brand, categories, slug, published) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
+      [name, price, stock, thumbnail, brand, categories, slug, true]
+    );
+    const newProduct = { ...result.rows[0], title: result.rows[0].name };
+    res.status(201).json(newProduct);
+  } catch (err) {
+    console.error(err.message);
+    if (err.code === '23505') {
+      return res.status(409).json({ message: 'محصولی با این slug قبلاً وجود دارد' });
     }
-    try {
-        const result = await pool.query(
-            'INSERT INTO products (name, price, stock, thumbnail, brand, categories, slug) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
-            [name, price, stock, thumbnail, brand, categories, slug]
-        );
-        const newProduct = {...result.rows[0], title: result.rows[0].name};
-        res.status(201).json(newProduct);
-    } catch (err) {
-        console.error(err.message);
-        if (err.code === '23505') {
-            return res.status(409).json({ message: 'محصولی با این slug قبلاً وجود دارد' });
-        }
-        res.status(500).json({ message: 'خطا در افزودن محصول' });
-    }
+    res.status(500).json({ message: 'خطا در افزودن محصول' });
+  }
 });
 
 // به‌روزرسانی محصول
 app.put('/api/products/:id', async (req, res) => {
-    const { id } = req.params;
-    const { name, price, stock, thumbnail, brand, categories, slug, published } = req.body;
+  const { id } = req.params;
+  const { name, price, stock, thumbnail, brand, categories, slug, published } = req.body;
 
-    try {
-        const result = await pool.query(
-            'UPDATE products SET name = $1, price = $2, stock = $3, thumbnail = $4, brand = $5, categories = $6, slug = $7, published = $8 WHERE id = $9 RETURNING *',
-            [name, price, stock, thumbnail, brand, categories, slug, published, id]
-        );
+  try {
+    const result = await pool.query(
+      'UPDATE products SET name = $1, price = $2, stock = $3, thumbnail = $4, brand = $5, categories = $6, slug = $7, published = $8 WHERE id = $9 RETURNING *',
+      [name, price, stock, thumbnail, brand, categories, slug, published, id]
+    );
 
-        if (result.rows.length === 0) {
-            return res.status(404).json({ message: 'محصول پیدا نشد' });
-        }
-
-        const updatedProduct = {...result.rows[0], title: result.rows[0].name};
-        res.status(200).json(updatedProduct);
-    } catch (err) {
-        console.error(err.message);
-        if (err.code === '23505') {
-            return res.status(409).json({ message: 'محصولی با این slug قبلاً وجود دارد' });
-        }
-        res.status(500).json({ message: 'خطا در به‌روزرسانی محصول' });
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'محصول پیدا نشد' });
     }
+
+    const updatedProduct = { ...result.rows[0], title: result.rows[0].name };
+    res.status(200).json(updatedProduct);
+  } catch (err) {
+    console.error(err.message);
+    if (err.code === '23505') {
+      return res.status(409).json({ message: 'محصولی با این slug قبلاً وجود دارد' });
+    }
+    res.status(500).json({ message: 'خطا در به‌روزرسانی محصول' });
+  }
 });
 
-// حذف محصول
-// 🔧 اصلاح بک‌اند: تغییر DELETE endpoint در server.js
-
-
-// 🔧 با این کد (حذف نرم):
+// حذف نرم محصول (بایگانی)
 app.delete('/api/products/:id', async (req, res) => {
-    const { id } = req.params;
+  const { id } = req.params;
+  try {
+    const result = await pool.query(
+      'UPDATE products SET published = false WHERE id = $1 RETURNING *',
+      [id]
+    );
 
-    try {
-        // به جای حذف واقعی، فقط published رو false می‌کنیم
-        const result = await pool.query(
-            'UPDATE products SET published = false WHERE id = $1 RETURNING *',
-            [id]
-        );
-
-        if (result.rows.length === 0) {
-            return res.status(404).json({ message: 'محصول پیدا نشد' });
-        }
-
-        res.status(200).json({ message: 'محصول با موفقیت بایگانی شد' });
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).json({ message: 'خطا در بایگانی محصول' });
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'محصول پیدا نشد' });
     }
+
+    res.status(200).json({ message: 'محصول با موفقیت بایگانی شد' });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'خطا در بایگانی محصول' });
+  }
 });
 
-// 🔧 اضافه کن endpoint جدید برای مشاهده همه محصولات (شامل مخفی‌ها):
-app.get('/api/products/all', async (req, res) => {
-    try {
-        console.log('🔍 Fetching ALL products...');
-        const result = await pool.query('SELECT * FROM products ORDER BY id DESC');
-        console.log(`📦 Found ${result.rows.length} products total`);
-
-        const productsForFrontend = result.rows.map(p => ({
-            ...p,
-            title: p.name,
-            // اطمینان از اینکه published boolean است
-            published: p.published !== false // اگر null باشه، true در نظر بگیر
-        }));
-
-        res.status(200).json(productsForFrontend);
-    } catch (err) {
-        console.error('Error in /api/products/all:', err.message);
-        res.status(500).json({ message: 'خطا در ارتباط با پایگاه داده' });
-    }
-});
-
-// 🔧 اضافه کن endpoint برای مشاهده محصولات پیش‌نویس:
-app.get('/api/products/drafts', async (req, res) => {
-    try {
-        const result = await pool.query('SELECT * FROM products WHERE published = false ORDER BY id ASC');
-        const productsForFrontend = result.rows.map(p => ({...p, title: p.name}));
-        res.status(200).json(productsForFrontend);
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).json({ message: 'خطا در ارتباط با پایگاه داده' });
-    }
-});
-
-// 🔧 endpoint برای بازگردانی محصولات حذف شده:
+// بازگردانی محصول بایگانی شده
 app.patch('/api/products/:id/restore', async (req, res) => {
-    const { id } = req.params;
-    try {
-        const result = await pool.query(
-            'UPDATE products SET published = true WHERE id = $1 RETURNING *',
-            [id]
-        );
-        if (result.rows.length === 0) {
-            return res.status(404).json({ message: 'محصول پیدا نشد' });
-        }
-        res.status(200).json({
-            message: 'محصول با موفقیت بازگردانی شد',
-            product: result.rows[0]
-        });
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).json({ message: 'خطا در بازگردانی محصول' });
+  const { id } = req.params;
+  try {
+    const result = await pool.query(
+      'UPDATE products SET published = true WHERE id = $1 RETURNING *',
+      [id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'محصول پیدا نشد' });
     }
+    res.status(200).json({
+      message: 'محصول با موفقیت بازگردانی شد',
+      product: result.rows[0]
+    });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'خطا در بازگردانی محصول' });
+  }
 });
+
+// تغییر وضعیت انتشار
+app.patch('/api/products/:id/toggle-publish', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await pool.query(
+      'UPDATE products SET published = NOT published WHERE id = $1 RETURNING *',
+      [id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'محصولی با این شناسه یافت نشد.' });
+    }
+    res.status(200).json(result.rows[0]);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'خطا در تغییر وضعیت انتشار' });
+  }
+});
+
+// دریافت آمار محصولات
+app.get('/api/products/stats', async (req, res) => {
+  try {
+    const totalProducts = await pool.query('SELECT COUNT(*) FROM products');
+    const publishedProducts = await pool.query('SELECT COUNT(*) FROM products WHERE published = true');
+    const draftProducts = await pool.query('SELECT COUNT(*) FROM products WHERE published = false');
+    const lowStockProducts = await pool.query('SELECT COUNT(*) FROM products WHERE stock < 10');
+
+    const stats = {
+      total: parseInt(totalProducts.rows[0].count),
+      published: parseInt(publishedProducts.rows[0].count),
+      draft: parseInt(draftProducts.rows[0].count),
+      lowStock: parseInt(lowStockProducts.rows[0].count)
+    };
+
+    res.status(200).json(stats);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'خطا در دریافت آمار' });
+  }
+});
+
+// عملیات bulk
+app.post('/api/products/bulk-action', async (req, res) => {
+  const { action, productIds } = req.body;
+
+  if (!action || !productIds || !Array.isArray(productIds)) {
+    return res.status(400).json({ message: 'اطلاعات نامعتبر' });
+  }
+
+  try {
+    let result;
+    switch (action) {
+      case 'publish':
+        result = await pool.query(
+          'UPDATE products SET published = true WHERE id = ANY($1) RETURNING *',
+          [productIds]
+        );
+        break;
+      case 'unpublish':
+        result = await pool.query(
+          'UPDATE products SET published = false WHERE id = ANY($1) RETURNING *',
+          [productIds]
+        );
+        break;
+      case 'delete':
+        result = await pool.query(
+          'DELETE FROM products WHERE id = ANY($1) RETURNING *',
+          [productIds]
+        );
+        break;
+      default:
+        return res.status(400).json({ message: 'عملیات نامعتبر' });
+    }
+
+    res.status(200).json({
+      message: `${result.rowCount} محصول با موفقیت ${action} شد`,
+      affectedProducts: result.rows
+    });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'خطا در اجرای عملیات bulk' });
+  }
+});
+
+// بک آپ محصولات
+app.get('/api/products/export', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM products ORDER BY id');
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', 'attachment; filename=products-backup.json');
+    res.status(200).json(result.rows);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'خطا در تهیه بک آپ' });
+  }
+});
+
 // --- بخش مدیریت سفارشات ---
 
 // دریافت تمام سفارشات
@@ -389,42 +466,39 @@ app.get('/api/orders', async (req, res) => {
 
 // دریافت جزئیات یک سفارش
 app.get('/api/orders/:id', async (req, res) => {
-    const { id } = req.params;
+  const { id } = req.params;
+  try {
+    const query = `
+      SELECT 
+        o.id, o.customer_chat_id, o.total_amount, o.created_at, o.status,
+        json_agg(json_build_object(
+          'product_id', p.id,
+          'product_name', p.name, 
+          'quantity', oi.quantity, 
+          'price_at_purchase', oi.price_at_purchase,
+          'product_thumbnail', p.thumbnail
+        )) as items
+      FROM orders o
+      JOIN order_items oi ON o.id = oi.order_id
+      JOIN products p ON oi.product_id = p.id
+      WHERE o.id = $1
+      GROUP BY o.id
+    `;
 
-    try {
-        const query = `
-            SELECT 
-                o.id, o.customer_chat_id, o.total_amount, o.created_at, o.status,
-                json_agg(json_build_object(
-                    'product_id', p.id,
-                    'product_name', p.name, 
-                    'quantity', oi.quantity, 
-                    'price_at_purchase', oi.price_at_purchase,
-                    'product_thumbnail', p.thumbnail
-                )) as items
-            FROM orders o
-            JOIN order_items oi ON o.id = oi.order_id
-            JOIN products p ON oi.product_id = p.id
-            WHERE o.id = $1
-            GROUP BY o.id
-        `;
-
-        const result = await pool.query(query, [id]);
-
-        if (result.rows.length === 0) {
-            return res.status(404).json({ message: 'سفارش پیدا نشد' });
-        }
-
-        res.status(200).json(result.rows[0]);
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).json({ message: 'خطا در دریافت سفارش' });
+    const result = await pool.query(query, [id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'سفارش پیدا نشد' });
     }
+
+    res.status(200).json(result.rows[0]);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'خطا در دریافت سفارش' });
+  }
 });
 
 // ثبت سفارش جدید
 app.post('/api/orders', async (req, res) => {
-  console.log("Received new order request with body:", JSON.stringify(req.body, null, 2));
   const { customer_chat_id, items } = req.body;
 
   if (!customer_chat_id || !items || !Array.isArray(items) || items.length === 0) {
@@ -435,7 +509,6 @@ app.post('/api/orders', async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // محاسبه کل مبلغ و بررسی موجودی
     let totalAmount = 0;
     const processedItems = [];
 
@@ -460,21 +533,18 @@ app.post('/api/orders', async (req, res) => {
       });
     }
 
-    // ایجاد سفارش
     const orderResult = await client.query(
       'INSERT INTO orders (customer_chat_id, total_amount) VALUES ($1, $2) RETURNING *',
       [customer_chat_id, totalAmount]
     );
     const newOrder = orderResult.rows[0];
 
-    // اضافه کردن آیتم‌های سفارش
     for (const item of processedItems) {
       await client.query(
         'INSERT INTO order_items (order_id, product_id, quantity, price_at_purchase) VALUES ($1, $2, $3, $4)',
         [newOrder.id, item.product_id, item.quantity, item.price_at_purchase]
       );
 
-      // کاهش موجودی محصول
       await client.query(
         'UPDATE products SET stock = stock - $1 WHERE id = $2',
         [item.quantity, item.product_id]
@@ -495,270 +565,7 @@ app.post('/api/orders', async (req, res) => {
   }
 });
 
-// به‌روزرسانی وضعیت سفارش
-app.put('/api/orders/:id/status', async (req, res) => {
-    const { id } = req.params;
-    const { status } = req.body;
-
-    const validStatuses = ['Pending', 'Processing', 'Shipped', 'Delivered', 'Cancelled'];
-    if (!validStatuses.includes(status)) {
-        return res.status(400).json({ message: 'وضعیت نامعتبر است' });
-    }
-
-    try {
-        const result = await pool.query(
-            'UPDATE orders SET status = $1 WHERE id = $2 RETURNING *',
-            [status, id]
-        );
-
-        if (result.rows.length === 0) {
-            return res.status(404).json({ message: 'سفارش پیدا نشد' });
-        }
-
-        res.status(200).json({
-            message: 'وضعیت سفارش به‌روزرسانی شد',
-            order: result.rows[0]
-        });
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).json({ message: 'خطا در به‌روزرسانی وضعیت' });
-    }
-});
-
-// لغو سفارش
-app.patch('/api/orders/:id/cancel', async (req, res) => {
-    const { id } = req.params;
-
-    const client = await pool.connect();
-    try {
-        await client.query('BEGIN');
-
-        // بررسی وجود سفارش
-        const orderResult = await client.query('SELECT * FROM orders WHERE id = $1', [id]);
-        if (orderResult.rows.length === 0) {
-            throw new Error('سفارش پیدا نشد');
-        }
-
-        const order = orderResult.rows[0];
-        if (order.status === 'Delivered') {
-            throw new Error('نمی‌توان سفارش تحویل شده را لغو کرد');
-        }
-
-        // برگرداندن موجودی محصولات
-        const itemsResult = await client.query(
-            'SELECT product_id, quantity FROM order_items WHERE order_id = $1',
-            [id]
-        );
-
-        for (const item of itemsResult.rows) {
-            await client.query(
-                'UPDATE products SET stock = stock + $1 WHERE id = $2',
-                [item.quantity, item.product_id]
-            );
-        }
-
-        // تغییر وضعیت سفارش به لغو شده
-        await client.query(
-            'UPDATE orders SET status = $1 WHERE id = $2',
-            ['Cancelled', id]
-        );
-
-        await client.query('COMMIT');
-        res.status(200).json({ message: 'سفارش با موفقیت لغو شد' });
-    } catch (err) {
-        await client.query('ROLLBACK');
-        console.error(err.message);
-        res.status(500).json({ message: err.message || 'خطا در لغو سفارش' });
-    } finally {
-        client.release();
-    }
-});
-
-// جستجو در محصولات
-app.get('/api/products/search/:query', async (req, res) => {
-    const { query } = req.params;
-    try {
-        const result = await pool.query(`
-            SELECT * FROM products 
-            WHERE name ILIKE $1 OR brand ILIKE $1 OR categories ILIKE $1
-            AND published = true
-            ORDER BY name ASC
-        `, [`%${query}%`]);
-        res.status(200).json(result.rows);
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).json({ message: 'خطا در جستجو' });
-    }
-});
-
-// تغییر وضعیت انتشار به صورت جداگانه
-app.patch('/api/products/:id/toggle-publish', async (req, res) => {
-    const { id } = req.params;
-    try {
-        const result = await pool.query(
-            'UPDATE products SET published = NOT published WHERE id = $1 RETURNING *',
-            [id]
-        );
-        if (result.rows.length === 0) {
-            return res.status(404).json({ message: 'محصولی با این شناسه یافت نشد.' });
-        }
-        res.status(200).json(result.rows[0]);
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).json({ message: 'خطا در تغییر وضعیت انتشار' });
-    }
-});
-
-// دریافت آمار محصولات برای داشبورد
-app.get('/api/products/stats', async (req, res) => {
-    try {
-        const totalProducts = await pool.query('SELECT COUNT(*) FROM products');
-        const publishedProducts = await pool.query('SELECT COUNT(*) FROM products WHERE published = true');
-        const draftProducts = await pool.query('SELECT COUNT(*) FROM products WHERE published = false');
-        const lowStockProducts = await pool.query('SELECT COUNT(*) FROM products WHERE stock < 10');
-
-        const stats = {
-            total: parseInt(totalProducts.rows[0].count),
-            published: parseInt(publishedProducts.rows[0].count),
-            draft: parseInt(draftProducts.rows[0].count),
-            lowStock: parseInt(lowStockProducts.rows[0].count)
-        };
-
-        res.status(200).json(stats);
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).json({ message: 'خطا در دریافت آمار' });
-    }
-});
-
-// ایجاد عملکرد bulk operations
-app.post('/api/products/bulk-action', async (req, res) => {
-    const { action, productIds } = req.body;
-
-    if (!action || !productIds || !Array.isArray(productIds)) {
-        return res.status(400).json({ message: 'اطلاعات نامعتبر' });
-    }
-
-    try {
-        let result;
-        switch (action) {
-            case 'publish':
-                result = await pool.query(
-                    'UPDATE products SET published = true WHERE id = ANY($1) RETURNING *',
-                    [productIds]
-                );
-                break;
-            case 'unpublish':
-                result = await pool.query(
-                    'UPDATE products SET published = false WHERE id = ANY($1) RETURNING *',
-                    [productIds]
-                );
-                break;
-            case 'delete':
-                result = await pool.query(
-                    'DELETE FROM products WHERE id = ANY($1) RETURNING *',
-                    [productIds]
-                );
-                break;
-            default:
-                return res.status(400).json({ message: 'عملیات نامعتبر' });
-        }
-
-        res.status(200).json({
-            message: `${result.rowCount} محصول با موفقیت ${action} شد`,
-            affectedProducts: result.rows
-        });
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).json({ message: 'خطا در اجرای عملیات bulk' });
-    }
-});
-
-// بک آپ و بازیابی داده‌ها
-app.get('/api/products/export', async (req, res) => {
-    try {
-        const result = await pool.query('SELECT * FROM products ORDER BY id');
-        res.setHeader('Content-Type', 'application/json');
-        res.setHeader('Content-Disposition', 'attachment; filename=products-backup.json');
-        res.status(200).json(result.rows);
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).json({ message: 'خطا در تهیه بک آپ' });
-    }
-});
-
-// 🔧 در فایل backend/server.js
-// جایگزین کن endpoint /api/products/all (حدود خط 220):
-
-app.get('/api/products/all', async (req, res) => {
-    try {
-        console.log('🔍 Fetching ALL products...');
-        const result = await pool.query('SELECT * FROM products ORDER BY id DESC');
-        console.log(`📦 Found ${result.rows.length} products total`);
-
-        const productsForFrontend = result.rows.map(p => ({
-            ...p,
-            title: p.name,
-            // اطمینان از اینکه published boolean است
-            published: p.published !== false // اگر null باشه، true در نظر بگیر
-        }));
-
-        res.status(200).json(productsForFrontend);
-    } catch (err) {
-        console.error('Error in /api/products/all:', err.message);
-        res.status(500).json({ message: 'خطا در ارتباط با پایگاه داده' });
-    }
-});
-
-// 🔧 همچنین اصلاح endpoint اصلی /api/products (حدود خط 120):
-
-app.get('/api/products', async (req, res) => {
-    try {
-        console.log('🔍 Fetching PUBLISHED products...');
-        // اضافه کردن شرط بهتر برای published
-        const result = await pool.query('SELECT * FROM products WHERE published = true OR published IS NULL ORDER BY id DESC');
-        console.log(`📦 Found ${result.rows.length} published products`);
-
-        const productsForFrontend = result.rows.map(p => ({
-            ...p,
-            title: p.name,
-            published: p.published !== false
-        }));
-
-        res.status(200).json(productsForFrontend);
-    } catch (err) {
-        console.error('Error in /api/products:', err.message);
-        res.status(500).json({ message: 'خطا در ارتباط با پایگاه داده' });
-    }
-});
-
-// 🔧 اضافه کن این endpoint برای چک کردن ساختار دیتابیس:
-
-app.get('/api/check-table', async (req, res) => {
-    try {
-        // چک کردن ساختار جدول products
-        const tableInfo = await pool.query(`
-            SELECT column_name, data_type, is_nullable, column_default 
-            FROM information_schema.columns 
-            WHERE table_name = 'products'
-            ORDER BY ordinal_position
-        `);
-
-        // چک کردن تعداد رکوردها
-        const countResult = await pool.query('SELECT COUNT(*) FROM products');
-
-        res.status(200).json({
-            tableStructure: tableInfo.rows,
-            totalRecords: parseInt(countResult.rows[0].count),
-            message: 'Table structure checked successfully'
-        });
-    } catch (err) {
-        console.error('Error checking table:', err.message);
-        res.status(500).json({ message: 'خطا در چک کردن جدول' });
-    }
-});
-
 // --- شروع سرور ---
 app.listen(port, () => {
-    console.log(`🚀 Server running on port ${port}`);
+  console.log(`🚀 Server running on port ${port}`);
 });
