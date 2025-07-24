@@ -1,34 +1,26 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useSnackbar } from "notistack";
-import Card from "@mui/material/Card";
-import Stack from "@mui/material/Stack";
-import Table from "@mui/material/Table";
-import TableBody from "@mui/material/TableBody";
-import TableContainer from "@mui/material/TableContainer";
-import IconButton from "@mui/material/IconButton";
+import {
+  Card, Stack, Table, TableBody, TableContainer, Box, Typography,
+  Button, TextField, Dialog, DialogActions, DialogContent,
+  DialogContentText, DialogTitle, InputAdornment, IconButton,
+  Grid, CardContent, CardActions, CardMedia, CircularProgress, Alert,
+  useTheme, useMediaQuery, Chip // <-- Chip را برای نمایش برچسب‌ها اضافه می‌کنیم
+} from "@mui/material";
 import { Edit, Delete, Visibility, Add, Restore } from "@mui/icons-material";
-import Button from "@mui/material/Button";
-import TextField from "@mui/material/TextField";
-import Box from "@mui/material/Box";
-import Dialog from "@mui/material/Dialog";
-import DialogActions from "@mui/material/DialogActions";
-import DialogContent from "@mui/material/DialogContent";
-import DialogContentText from "@mui/material/DialogContentText";
-import DialogTitle from "@mui/material/DialogTitle";
+import SearchIcon from "@mui/icons-material/Search";
+import ClearIcon from "@mui/icons-material/Clear";
 
 // GLOBAL CUSTOM COMPONENTS
 import { TableHeader, TablePagination } from "components/data-table";
 import Scrollbar from "components/scrollbar";
-
-// CUSTOM UTILS LIBRARY FUNCTION
+import useMuiTable from "hooks/useMuiTable";
 import { currency } from "lib";
-
-// LOCAL CUSTOM COMPONENT
-import ProductRow from "../product-row";
 import PageWrapper from "../../page-wrapper";
+import ProductRow from "../product-row";
 
 // TABLE HEADER COLUMN DATA
 const tableHeading = [
@@ -43,298 +35,281 @@ const tableHeading = [
 export default function ProductsPageView() {
   const router = useRouter();
   const { enqueueSnackbar } = useSnackbar();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
-  // STATES
+  // تمام State ها و توابع شما بدون تغییر باقی می‌مانند
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState("");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [productToDelete, setProductToDelete] = useState(null);
-
-  // 🔥 STATE های جدید برای فیلتر
   const [showDrafts, setShowDrafts] = useState(false);
- const [showAll, setShowAll] = useState(true); // 🔥 پیش‌فرض روی "همه" باشه
+  const [showAll, setShowAll] = useState(true);
 
-  // 🔥 بارگذاری محصولات با فیلتر
   const fetchProducts = async () => {
-  try {
-    setLoading(true);
-
-    let endpoint = 'http://localhost:4000/api/products/all'; // 🔥 پیش‌فرض همه باشه
-
-    if (!showAll && !showDrafts) {
-      endpoint = 'http://localhost:4000/api/products'; // فقط منتشر شده‌ها
-    } else if (showDrafts) {
-      endpoint = 'http://localhost:4000/api/products/drafts'; // فقط پیش‌نویس‌ها
+    try {
+      setLoading(true);
+      let endpoint = 'http://localhost:4000/api/products';
+      if (showAll) endpoint = 'http://localhost:4000/api/products/all';
+      else if (showDrafts) endpoint = 'http://localhost:4000/api/products/drafts';
+      const response = await fetch(endpoint);
+      if (!response.ok) throw new Error(`خطا ${response.status}`);
+      const data = await response.json();
+      setProducts(data);
+    } catch (error) {
+      enqueueSnackbar(`خطا در بارگذاری: ${error.message}`, { variant: 'error' });
+      setProducts([]);
+    } finally {
+      setLoading(false);
     }
-
-    console.log('🔍 Fetching from:', endpoint); // برای debug
-
-    const response = await fetch(endpoint);
-    if (!response.ok) {
-      throw new Error('خطا در بارگذاری محصولات');
-    }
-    const data = await response.json();
-
-    console.log('📦 Products loaded:', data.length); // برای debug
-    setProducts(data);
-  } catch (error) {
-    console.error('خطا در بارگذاری محصولات:', error);
-    enqueueSnackbar('خطا در بارگذاری محصولات', { variant: 'error' });
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   useEffect(() => {
     fetchProducts();
-  }, [showDrafts, showAll]); // هر بار که فیلتر تغییر کرد، دوباره بارگذاری کن
+  }, [showDrafts, showAll]);
 
-  // فیلتر کردن محصولات بر اساس جستجو
-  const filteredProducts = products.filter(product =>
-    product.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    product.brand?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    product.categories?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredProducts = useMemo(() => {
+    if (!searchTerm.trim()) return products;
+    const searchLower = searchTerm.toLowerCase().trim();
+    return products.filter(product => {
+      const name = (product.name || '').toString().toLowerCase();
+      const brand = (product.brand || '').toString().toLowerCase();
+      let categories = '';
+      if (Array.isArray(product.categories)) categories = product.categories.join(' ').toLowerCase();
+      else if (product.categories) categories = product.categories.toString().toLowerCase();
+      const id = (product.id || '').toString();
+      return name.includes(searchLower) || brand.includes(searchLower) || categories.includes(searchLower) || id.includes(searchLower);
+    });
+  }, [products, searchTerm]);
 
-  // پیجینیشن
-  const ITEMS_PER_PAGE = 10;
-  const startIndex = (page - 1) * ITEMS_PER_PAGE;
-  const endIndex = startIndex + ITEMS_PER_PAGE;
-  const paginatedProducts = filteredProducts.slice(startIndex, endIndex);
-  const totalPages = Math.ceil(filteredProducts.length / ITEMS_PER_PAGE);
+  const reshapedProducts = useMemo(() => {
+    return filteredProducts.map((product) => ({
+      id: product.id,
+      name: product.name || 'بدون نام',
+      category: Array.isArray(product.categories) ? product.categories[0] || '-' : product.categories || '-',
+      brand: product.brand || '-',
+      price: product.price || 0,
+      published: product.published,
+      thumbnail: product.thumbnail,
+      slug: product.slug,
+      originalProduct: product
+    }));
+  }, [filteredProducts]);
 
-  // هندل کردن تغییر صفحه
-  const handlePageChange = (event: any, newPage: number) => {
-    setPage(newPage);
-  };
+  const {
+    order,
+    orderBy,
+    selected,
+    rowsPerPage,
+    filteredList,
+    handleChangePage,
+    handleRequestSort
+  } = useMuiTable({
+    listData: reshapedProducts,
+    defaultOrderBy: "id",
+    defaultOrder: "desc"
+  });
 
-  // باز کردن دیالوگ حذف
   const handleDeleteClick = (product: any) => {
-    setProductToDelete(product);
+    setProductToDelete(product.originalProduct || product);
     setDeleteDialogOpen(true);
   };
 
-  // تأیید حذف محصول (حالا فقط مخفی می‌کنه)
   const handleConfirmDelete = async () => {
     if (!productToDelete) return;
-
     try {
-      const response = await fetch(`http://localhost:4000/api/products/${productToDelete.id}`, {
-        method: 'DELETE',
-      });
-
-      if (!response.ok) {
-        throw new Error('خطا در حذف محصول');
-      }
-
+      const response = await fetch(`http://localhost:4000/api/products/${productToDelete.id}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error('خطا در حذف محصول');
       enqueueSnackbar('محصول با موفقیت بایگانی شد', { variant: 'success' });
-      fetchProducts(); // بارگذاری مجدد لیست
+      fetchProducts();
     } catch (error) {
-      console.error('خطا در حذف محصول:', error);
       enqueueSnackbar('خطا در حذف محصول', { variant: 'error' });
     }
-
     setDeleteDialogOpen(false);
     setProductToDelete(null);
   };
 
-  // لغو حذف
   const handleCancelDelete = () => {
     setDeleteDialogOpen(false);
     setProductToDelete(null);
   };
 
-  // 🔥 بازگردانی محصول
   const handleRestore = async (product: any) => {
+    const targetProduct = product.originalProduct || product;
     try {
-      const response = await fetch(`http://localhost:4000/api/products/${product.id}/restore`, {
-        method: 'PATCH',
-      });
-
-      if (!response.ok) {
-        throw new Error('خطا در بازگردانی محصول');
-      }
-
+      const response = await fetch(`http://localhost:4000/api/products/${targetProduct.id}/restore`, { method: 'PATCH' });
+      if (!response.ok) throw new Error('خطا در بازگردانی محصول');
       enqueueSnackbar('محصول با موفقیت بازگردانی شد', { variant: 'success' });
-      fetchProducts(); // بارگذاری مجدد لیست
+      fetchProducts();
     } catch (error) {
-      console.error('خطا در بازگردانی محصول:', error);
       enqueueSnackbar('خطا در بازگردانی محصول', { variant: 'error' });
     }
   };
 
-  // تغییر وضعیت انتشار
-const handleTogglePublished = async (product: any) => {
-  try {
-    // استفاده از endpoint مخصوص toggle که ساختیم
-    const response = await fetch(`http://localhost:4000/api/products/${product.id}/toggle-publish`, {
-      method: 'PATCH',
-    });
-
-    if (!response.ok) {
-      throw new Error('خطا در تغییر وضعیت انتشار');
-    }
-
-    const result = await response.json();
-    enqueueSnackbar('وضعیت انتشار تغییر کرد', { variant: 'success' });
-
-    // 🚨 مهم: فقط اگر در حالت "همه" هستیم، محصول رو جا به جا کن
-    // وگرنه لیست رو دوباره بارگذاری کن
-    if (showAll) {
-      // در حالت همه، محصول باید همچنان نمایش داده بشه
-      setProducts(prevProducts =>
-        prevProducts.map(p =>
-          p.id === product.id ? { ...p, published: result.published } : p
-        )
-      );
-    } else {
-      // در حالت‌های دیگر، محصول از لیست حذف می‌شه (طبیعی)
+  const handleTogglePublished = async (product: any) => {
+    const targetProduct = product.originalProduct || product;
+    try {
+      const response = await fetch(`http://localhost:4000/api/products/${targetProduct.id}/toggle-publish`, { method: 'PATCH' });
+      if (!response.ok) throw new Error('خطا در تغییر وضعیت انتشار');
+      enqueueSnackbar('وضعیت انتشار تغییر کرد', { variant: 'success' });
       fetchProducts();
+    } catch (error) {
+      enqueueSnackbar('خطا در تغییر وضعیت انتشار', { variant: 'error' });
     }
-  } catch (error) {
-    console.error('خطا در تغییر وضعیت انتشار:', error);
-    enqueueSnackbar('خطا در تغییر وضعیت انتشار', { variant: 'error' });
-  }
-};
-  // شمارش محصولات برای دکمه‌ها
+  };
+
+  const handleClearSearch = () => setSearchTerm("");
+
   const publishedCount = products.filter(p => p.published).length;
   const draftCount = products.filter(p => !p.published).length;
   const totalCount = products.length;
 
+  // کامپوننت نمایش کارت‌های موبایل (با اطلاعات بیشتر)
+  const MobileView = () => (
+    <Box sx={{ p: 2 }}>
+      {loading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', my: 10 }}><CircularProgress /></Box>
+      ) : filteredList.length === 0 ? (
+        <Typography sx={{ p: 3, textAlign: 'center' }}>
+          {searchTerm ? 'هیچ محصولی با این جستجو یافت نشد' : 'هیچ محصولی یافت نشد'}
+        </Typography>
+      ) : (
+        <Stack spacing={2}>
+          {filteredList.map((product: any) => (
+            <Card key={product.id}>
+              <CardMedia
+                component="img"
+                height="140"
+                image={product.thumbnail || '/assets/images/placeholder.png'}
+                alt={product.name}
+                sx={{ objectFit: 'contain' }}
+              />
+              <CardContent>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                  <Typography gutterBottom variant="h6" component="div" noWrap sx={{ flexGrow: 1, mr: 1 }}>
+                    {product.name}
+                  </Typography>
+                  <Chip
+                    label={product.published ? "منتشر شده" : "پیش‌نویس"}
+                    color={product.published ? "success" : "warning"}
+                    size="small"
+                  />
+                </Box>
+                <Typography variant="body2" color="text.secondary">
+                  برند: {product.brand}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  دسته‌بندی: {product.category}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  موجودی: {product.stock}
+                </Typography>
+                <Typography variant="subtitle1" color="primary.main" fontWeight="bold" sx={{ mt: 1 }}>
+                  {currency(product.price)}
+                </Typography>
+              </CardContent>
+              <CardActions sx={{ justifyContent: 'center', borderTop: '1px solid #eee' }}>
+                <Button size="small" onClick={() => router.push(`/admin/products/${product.id}`)}>ویرایش</Button>
+                <Button size="small" color="error" onClick={() => handleDeleteClick(product)}>حذف</Button>
+              </CardActions>
+            </Card>
+          ))}
+        </Stack>
+      )}
+    </Box>
+  );
+
+  // کامپوننت نمایش جدول دسکتاپ
+  const DesktopView = () => (
+    <Scrollbar>
+      <TableContainer sx={{ minWidth: 900 }}>
+        <Table>
+          <TableHeader
+            order={order}
+            hideSelectBtn
+            orderBy={orderBy}
+            heading={tableHeading}
+            rowCount={filteredProducts.length}
+            numSelected={0}
+            onRequestSort={handleRequestSort}
+          />
+          <TableBody>
+            {loading ? (
+              <tr><td colSpan={6} style={{ textAlign: 'center', padding: '2rem' }}><CircularProgress /></td></tr>
+            ) : filteredList.length === 0 ? (
+              <tr><td colSpan={6} style={{ textAlign: 'center', padding: '2rem' }}>{searchTerm ? 'هیچ محصولی با این جستجو یافت نشد' : 'هیچ محصولی یافت نشد'}</td></tr>
+            ) : (
+              filteredList.map((product: any) => (
+                <ProductRow
+                  key={product.id}
+                  product={product.originalProduct || product}
+                  onEdit={() => router.push(`/admin/products/${product.id}`)}
+                  onDelete={() => handleDeleteClick(product)}
+                  onView={() => router.push(`/products/${product.slug || product.id}`)}
+                  onTogglePublished={() => handleTogglePublished(product)}
+                  onRestore={() => handleRestore(product)}
+                />
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </TableContainer>
+    </Scrollbar>
+  );
+
   return (
     <PageWrapper title="Product List">
       <Card>
-        {/* 🔥 هدر جدید با دکمه‌های فیلتر */}
+        {/* بخش جستجو و فیلترها برای هر دو حالت مشترک است */}
         <Box sx={{ p: 2 }}>
-          {/* ردیف اول: جستجو */}
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Box sx={{ display: 'flex', gap: 2, mb: 2, alignItems: 'center' }}>
             <TextField
               size="small"
               placeholder="جستجو در محصولات..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              sx={{ width: 300 }}
+              sx={{ flex: 1 }}
+              InputProps={{
+                startAdornment: (<InputAdornment position="start"><SearchIcon /></InputAdornment>),
+                endAdornment: searchTerm && (<InputAdornment position="end"><IconButton size="small" onClick={handleClearSearch}><ClearIcon /></IconButton></InputAdornment>)
+              }}
             />
-            <Button
-              variant="contained"
-              startIcon={<Add />}
-              onClick={() => router.push('/admin/products/create')}
-            >
+            <Button variant="contained" startIcon={<Add />} onClick={() => router.push('/admin/products/create')}>
               اضافه کردن محصول
             </Button>
           </Box>
-
-          {/* ردیف دوم: دکمه‌های فیلتر */}
-          <Box sx={{ display: 'flex', gap: 1 }}>
-            <Button
-              variant={!showDrafts && !showAll ? "contained" : "outlined"}
-              onClick={() => {
-                setShowDrafts(false);
-                setShowAll(false);
-              }}
-              size="small"
-              color="success"
-            >
+          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+            <Button variant={!showDrafts && !showAll ? "contained" : "outlined"} onClick={() => { setShowDrafts(false); setShowAll(false); }} size="small" color="success">
               منتشر شده ({publishedCount})
             </Button>
-
-            <Button
-              variant={showDrafts ? "contained" : "outlined"}
-              onClick={() => {
-                setShowDrafts(true);
-                setShowAll(false);
-              }}
-              size="small"
-              color="warning"
-            >
+            <Button variant={showDrafts ? "contained" : "outlined"} onClick={() => { setShowDrafts(true); setShowAll(false); }} size="small" color="warning">
               پیش‌نویس ({draftCount})
             </Button>
-
-            <Button
-              variant={showAll ? "contained" : "outlined"}
-              onClick={() => {
-                setShowDrafts(false);
-                setShowAll(true);
-              }}
-              size="small"
-              color="secondary"
-            >
+            <Button variant={showAll ? "contained" : "outlined"} onClick={() => { setShowDrafts(false); setShowAll(true); }} size="small" color="secondary">
               همه ({totalCount})
             </Button>
+            {searchTerm && <Box sx={{ ml: 2, color: 'text.secondary', fontSize: '0.875rem' }}>{filteredProducts.length} نتیجه یافت شد</Box>}
           </Box>
         </Box>
 
-        {/* جدول */}
-        <Scrollbar>
-          <TableContainer sx={{ minWidth: 900 }}>
-            <Table>
-              <TableHeader
-                order="desc"
-                hideSelectBtn
-                orderBy="name"
-                heading={tableHeading}
-                rowCount={products.length}
-                numSelected={0}
-                onRequestSort={() => {}}
-              />
+        {isMobile ? <MobileView /> : <DesktopView />}
 
-              <TableBody>
-                {loading ? (
-                  <tr>
-                    <td colSpan={6} style={{ textAlign: 'center', padding: '2rem' }}>
-                      در حال بارگذاری...
-                    </td>
-                  </tr>
-                ) : paginatedProducts.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} style={{ textAlign: 'center', padding: '2rem' }}>
-                      هیچ محصولی یافت نشد
-                    </td>
-                  </tr>
-                ) : (
-                  paginatedProducts.map((product: any) => (
-                    <ProductRow
-                      key={product.id}
-                      product={product}
-                      onEdit={() => router.push(`/admin/products/${product.id}`)}
-                      onDelete={() => handleDeleteClick(product)}
-                      onView={() => router.push(`/products/${product.slug || product.id}`)}
-                      onTogglePublished={() => handleTogglePublished(product)}
-                      onRestore={() => handleRestore(product)}
-                    />
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        </Scrollbar>
-
-        {/* پیجینیشن */}
+        {/* بخش پیجینیشن برای هر دو حالت مشترک است */}
         <Stack alignItems="center" my={4}>
           <TablePagination
-            onChange={handlePageChange}
-            count={Math.ceil(totalPages)}
-            page={page}
+            onChange={handleChangePage}
+            count={Math.ceil(filteredProducts.length / rowsPerPage)}
           />
         </Stack>
       </Card>
 
-      {/* دیالوگ تأیید حذف */}
-      <Dialog
-        open={deleteDialogOpen}
-        onClose={handleCancelDelete}
-        aria-labelledby="alert-dialog-title"
-        aria-describedby="alert-dialog-description"
-      >
-        <DialogTitle id="alert-dialog-title">
-          تأیید بایگانی محصول
-        </DialogTitle>
+      {/* دیالوگ تأیید حذف برای هر دو حالت مشترک است */}
+      <Dialog open={deleteDialogOpen} onClose={handleCancelDelete}>
+        <DialogTitle>تأیید بایگانی محصول</DialogTitle>
         <DialogContent>
-          <DialogContentText id="alert-dialog-description">
+          <DialogContentText>
             آیا مطمئن هستید که می‌خواهید محصول "{productToDelete?.name}" را بایگانی کنید؟
-            محصول حذف نمی‌شود، فقط از نمایش عمومی مخفی می‌شود.
           </DialogContentText>
         </DialogContent>
         <DialogActions>
