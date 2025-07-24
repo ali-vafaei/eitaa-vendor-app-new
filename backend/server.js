@@ -46,6 +46,8 @@ pool.connect((err) => {
     console.log('✅ Database connected successfully!');
   }
 });
+
+
 // --- route تست API ها ---
 app.get('/api/test', (req, res) => {
   res.json({
@@ -144,16 +146,82 @@ app.post('/api/auth/login', async (req, res) => {
 // دریافت تمام محصولات
 app.get('/api/products', async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM products WHERE published = true ORDER BY id ASC');
-        const productsForFrontend = result.rows.map(p => ({...p, title: p.name}));
+        console.log('🔍 Fetching PUBLISHED products...');
+        // اضافه کردن شرط بهتر برای published
+        const result = await pool.query('SELECT * FROM products WHERE published = true OR published IS NULL ORDER BY id DESC');
+        console.log(`📦 Found ${result.rows.length} published products`);
+
+        const productsForFrontend = result.rows.map(p => ({
+            ...p,
+            title: p.name,
+            published: p.published !== false
+        }));
+
         res.status(200).json(productsForFrontend);
     } catch (err) {
-        console.error(err.message);
+        console.error('Error in /api/products:', err.message);
         res.status(500).json({ message: 'خطا در ارتباط با پایگاه داده' });
     }
 });
 
 // دریافت یک محصول بر اساس ID
+
+// ✅ ابتدا route های مشخص:
+app.get('/api/products/all', async (req, res) => {
+    try {
+        console.log('🔍 Fetching ALL products...');
+        const result = await pool.query('SELECT * FROM products ORDER BY id DESC');
+        console.log(`📦 Found ${result.rows.length} products total`);
+
+        const productsForFrontend = result.rows.map(p => ({
+            ...p,
+            title: p.name,
+            published: p.published !== false
+        }));
+
+        res.status(200).json(productsForFrontend);
+    } catch (err) {
+        console.error('Error in /api/products/all:', err.message);
+        res.status(500).json({ message: 'خطا در ارتباط با پایگاه داده' });
+    }
+});
+
+app.get('/api/products/drafts', async (req, res) => {
+    try {
+        console.log('🔍 Fetching DRAFT products...');
+        const result = await pool.query('SELECT * FROM products WHERE published = false ORDER BY id DESC');
+        console.log(`📦 Found ${result.rows.length} draft products`);
+
+        const productsForFrontend = result.rows.map(p => ({
+            ...p,
+            title: p.name,
+            published: Boolean(p.published)
+        }));
+
+        res.status(200).json(productsForFrontend);
+    } catch (err) {
+        console.error('Error in /api/products/drafts:', err.message);
+        res.status(500).json({ message: 'خطا در ارتباط با پایگاه داده' });
+    }
+});
+
+app.get('/api/products/search/:query', async (req, res) => {
+    const { query } = req.params;
+    try {
+        const result = await pool.query(`
+            SELECT * FROM products 
+            WHERE name ILIKE $1 OR brand ILIKE $1 OR categories ILIKE $1
+            AND published = true
+            ORDER BY name ASC
+        `, [`%${query}%`]);
+        res.status(200).json(result.rows);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ message: 'خطا در جستجو' });
+    }
+});
+
+// ✅ سپس route با parameter:
 app.get('/api/products/:id', async (req, res) => {
     const { id } = req.params;
     try {
@@ -218,41 +286,84 @@ app.put('/api/products/:id', async (req, res) => {
 });
 
 // حذف محصول
+// 🔧 اصلاح بک‌اند: تغییر DELETE endpoint در server.js
+
+
+// 🔧 با این کد (حذف نرم):
 app.delete('/api/products/:id', async (req, res) => {
     const { id } = req.params;
 
     try {
-        const result = await pool.query('DELETE FROM products WHERE id = $1 RETURNING *', [id]);
-
-        if (result.rows.length === 0) {
-            return res.status(404).json({ message: 'محصول پیدا نشد' });
-        }
-
-        res.status(200).json({ message: 'محصول با موفقیت حذف شد' });
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).json({ message: 'خطا در حذف محصول' });
-    }
-});
-
-// بایگانی کردن محصول (تغییر وضعیت published به false)
-app.patch('/api/products/:id/archive', async (req, res) => {
-    const { id } = req.params;
-    try {
+        // به جای حذف واقعی، فقط published رو false می‌کنیم
         const result = await pool.query(
             'UPDATE products SET published = false WHERE id = $1 RETURNING *',
             [id]
         );
+
         if (result.rows.length === 0) {
             return res.status(404).json({ message: 'محصول پیدا نشد' });
         }
-        res.status(200).json({ message: 'محصول با موفقیت بایگانی شد.' });
+
+        res.status(200).json({ message: 'محصول با موفقیت بایگانی شد' });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ message: 'خطا در بایگانی محصول' });
+    }
+});
+
+// 🔧 اضافه کن endpoint جدید برای مشاهده همه محصولات (شامل مخفی‌ها):
+app.get('/api/products/all', async (req, res) => {
+    try {
+        console.log('🔍 Fetching ALL products...');
+        const result = await pool.query('SELECT * FROM products ORDER BY id DESC');
+        console.log(`📦 Found ${result.rows.length} products total`);
+
+        const productsForFrontend = result.rows.map(p => ({
+            ...p,
+            title: p.name,
+            // اطمینان از اینکه published boolean است
+            published: p.published !== false // اگر null باشه، true در نظر بگیر
+        }));
+
+        res.status(200).json(productsForFrontend);
+    } catch (err) {
+        console.error('Error in /api/products/all:', err.message);
+        res.status(500).json({ message: 'خطا در ارتباط با پایگاه داده' });
+    }
+});
+
+// 🔧 اضافه کن endpoint برای مشاهده محصولات پیش‌نویس:
+app.get('/api/products/drafts', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM products WHERE published = false ORDER BY id ASC');
+        const productsForFrontend = result.rows.map(p => ({...p, title: p.name}));
+        res.status(200).json(productsForFrontend);
     } catch (err) {
         console.error(err.message);
         res.status(500).json({ message: 'خطا در ارتباط با پایگاه داده' });
     }
 });
 
+// 🔧 endpoint برای بازگردانی محصولات حذف شده:
+app.patch('/api/products/:id/restore', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await pool.query(
+            'UPDATE products SET published = true WHERE id = $1 RETURNING *',
+            [id]
+        );
+        if (result.rows.length === 0) {
+            return res.status(404).json({ message: 'محصول پیدا نشد' });
+        }
+        res.status(200).json({
+            message: 'محصول با موفقیت بازگردانی شد',
+            product: result.rows[0]
+        });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ message: 'خطا در بازگردانی محصول' });
+    }
+});
 // --- بخش مدیریت سفارشات ---
 
 // دریافت تمام سفارشات
@@ -460,6 +571,190 @@ app.patch('/api/orders/:id/cancel', async (req, res) => {
         res.status(500).json({ message: err.message || 'خطا در لغو سفارش' });
     } finally {
         client.release();
+    }
+});
+
+// جستجو در محصولات
+app.get('/api/products/search/:query', async (req, res) => {
+    const { query } = req.params;
+    try {
+        const result = await pool.query(`
+            SELECT * FROM products 
+            WHERE name ILIKE $1 OR brand ILIKE $1 OR categories ILIKE $1
+            AND published = true
+            ORDER BY name ASC
+        `, [`%${query}%`]);
+        res.status(200).json(result.rows);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ message: 'خطا در جستجو' });
+    }
+});
+
+// تغییر وضعیت انتشار به صورت جداگانه
+app.patch('/api/products/:id/toggle-publish', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await pool.query(
+            'UPDATE products SET published = NOT published WHERE id = $1 RETURNING *',
+            [id]
+        );
+        if (result.rows.length === 0) {
+            return res.status(404).json({ message: 'محصولی با این شناسه یافت نشد.' });
+        }
+        res.status(200).json(result.rows[0]);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ message: 'خطا در تغییر وضعیت انتشار' });
+    }
+});
+
+// دریافت آمار محصولات برای داشبورد
+app.get('/api/products/stats', async (req, res) => {
+    try {
+        const totalProducts = await pool.query('SELECT COUNT(*) FROM products');
+        const publishedProducts = await pool.query('SELECT COUNT(*) FROM products WHERE published = true');
+        const draftProducts = await pool.query('SELECT COUNT(*) FROM products WHERE published = false');
+        const lowStockProducts = await pool.query('SELECT COUNT(*) FROM products WHERE stock < 10');
+
+        const stats = {
+            total: parseInt(totalProducts.rows[0].count),
+            published: parseInt(publishedProducts.rows[0].count),
+            draft: parseInt(draftProducts.rows[0].count),
+            lowStock: parseInt(lowStockProducts.rows[0].count)
+        };
+
+        res.status(200).json(stats);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ message: 'خطا در دریافت آمار' });
+    }
+});
+
+// ایجاد عملکرد bulk operations
+app.post('/api/products/bulk-action', async (req, res) => {
+    const { action, productIds } = req.body;
+
+    if (!action || !productIds || !Array.isArray(productIds)) {
+        return res.status(400).json({ message: 'اطلاعات نامعتبر' });
+    }
+
+    try {
+        let result;
+        switch (action) {
+            case 'publish':
+                result = await pool.query(
+                    'UPDATE products SET published = true WHERE id = ANY($1) RETURNING *',
+                    [productIds]
+                );
+                break;
+            case 'unpublish':
+                result = await pool.query(
+                    'UPDATE products SET published = false WHERE id = ANY($1) RETURNING *',
+                    [productIds]
+                );
+                break;
+            case 'delete':
+                result = await pool.query(
+                    'DELETE FROM products WHERE id = ANY($1) RETURNING *',
+                    [productIds]
+                );
+                break;
+            default:
+                return res.status(400).json({ message: 'عملیات نامعتبر' });
+        }
+
+        res.status(200).json({
+            message: `${result.rowCount} محصول با موفقیت ${action} شد`,
+            affectedProducts: result.rows
+        });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ message: 'خطا در اجرای عملیات bulk' });
+    }
+});
+
+// بک آپ و بازیابی داده‌ها
+app.get('/api/products/export', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM products ORDER BY id');
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Disposition', 'attachment; filename=products-backup.json');
+        res.status(200).json(result.rows);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ message: 'خطا در تهیه بک آپ' });
+    }
+});
+
+// 🔧 در فایل backend/server.js
+// جایگزین کن endpoint /api/products/all (حدود خط 220):
+
+app.get('/api/products/all', async (req, res) => {
+    try {
+        console.log('🔍 Fetching ALL products...');
+        const result = await pool.query('SELECT * FROM products ORDER BY id DESC');
+        console.log(`📦 Found ${result.rows.length} products total`);
+
+        const productsForFrontend = result.rows.map(p => ({
+            ...p,
+            title: p.name,
+            // اطمینان از اینکه published boolean است
+            published: p.published !== false // اگر null باشه، true در نظر بگیر
+        }));
+
+        res.status(200).json(productsForFrontend);
+    } catch (err) {
+        console.error('Error in /api/products/all:', err.message);
+        res.status(500).json({ message: 'خطا در ارتباط با پایگاه داده' });
+    }
+});
+
+// 🔧 همچنین اصلاح endpoint اصلی /api/products (حدود خط 120):
+
+app.get('/api/products', async (req, res) => {
+    try {
+        console.log('🔍 Fetching PUBLISHED products...');
+        // اضافه کردن شرط بهتر برای published
+        const result = await pool.query('SELECT * FROM products WHERE published = true OR published IS NULL ORDER BY id DESC');
+        console.log(`📦 Found ${result.rows.length} published products`);
+
+        const productsForFrontend = result.rows.map(p => ({
+            ...p,
+            title: p.name,
+            published: p.published !== false
+        }));
+
+        res.status(200).json(productsForFrontend);
+    } catch (err) {
+        console.error('Error in /api/products:', err.message);
+        res.status(500).json({ message: 'خطا در ارتباط با پایگاه داده' });
+    }
+});
+
+// 🔧 اضافه کن این endpoint برای چک کردن ساختار دیتابیس:
+
+app.get('/api/check-table', async (req, res) => {
+    try {
+        // چک کردن ساختار جدول products
+        const tableInfo = await pool.query(`
+            SELECT column_name, data_type, is_nullable, column_default 
+            FROM information_schema.columns 
+            WHERE table_name = 'products'
+            ORDER BY ordinal_position
+        `);
+
+        // چک کردن تعداد رکوردها
+        const countResult = await pool.query('SELECT COUNT(*) FROM products');
+
+        res.status(200).json({
+            tableStructure: tableInfo.rows,
+            totalRecords: parseInt(countResult.rows[0].count),
+            message: 'Table structure checked successfully'
+        });
+    } catch (err) {
+        console.error('Error checking table:', err.message);
+        res.status(500).json({ message: 'خطا در چک کردن جدول' });
     }
 });
 
