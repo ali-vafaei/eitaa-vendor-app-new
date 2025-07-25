@@ -40,28 +40,28 @@ const RegisterPageView = () => {
   };
 
   // REGISTER FORM FIELD VALIDATION SCHEMA
-  const validationSchema = yup.object().shape({
-    accountType: yup.string().required("Please select an account type"),
-    name: yup.string().when("accountType", {
-      is: "customer",
-      then: yup.string().required("Name is required"),
-      otherwise: yup.string().notRequired(),
-    }),
-    email: yup.string().email("Invalid email").required("Email is required"),
-    password: yup.string().required("Password is required"),
-    re_password: yup
-      .string()
-      .oneOf([yup.ref("password"), null], "Passwords must match")
-      .required("Please re-type password"),
-    agreement: yup
-      .bool()
-      .test(
-        "agreement",
-        "You have to agree with our Terms and Conditions!",
-        (value) => value === true
-      )
-      .required("You have to agree with our Terms and Conditions!"),
-  });
+const validationSchema = yup.object().shape({
+  accountType: yup.string().required("Please select an account type"),
+  name: yup.string().when("accountType", {
+    is: "customer",
+    then: yup.string().required("Name is required"),
+    otherwise: yup.string().notRequired(),
+  }),
+  email: yup.string().email("Invalid email").required("Email is required"),
+  password: yup.string().required("Password is required"),
+  re_password: yup
+    .string()
+    .oneOf([yup.ref("password"), null], "Passwords must match")
+    .required("Please re-type password"),
+  agreement: yup
+    .bool()
+    .test(
+      "agreement",
+      "You have to agree with our Terms and Conditions!",
+      (value) => value === true
+    )
+    .required("You have to agree with our Terms and Conditions!"),
+});
 
   const { values, errors, touched, handleBlur, handleChange, handleSubmit } = useFormik({
     initialValues,
