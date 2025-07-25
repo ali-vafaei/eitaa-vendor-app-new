@@ -806,16 +806,22 @@ app.get('/api/fashion-shop-2/service', async (req, res) => {
 });
 // ===== API های کاربران (مشتریان) =====
 
+// (مطمئن شوید که bcrypt و saltRounds در بالای فایل تعریف شده‌اند)
+// import bcrypt from 'bcrypt';
+// const saltRounds = 10;
+
 // ثبت نام کاربر
 app.post('/api/auth/customer/register', async (req, res) => {
+  // ۱. دریافت اطلاعات از بدنه درخواست
   const { email, password, firstName, lastName, phone } = req.body;
 
+  // ۲. بررسی ورودی‌های الزامی
   if (!email || !password) {
     return res.status(400).json({ message: 'ایمیل و رمز عبور الزامی است' });
   }
 
   try {
-    // بررسی وجود کاربر
+    // ۳. بررسی وجود کاربر با این ایمیل
     const existingUser = await pool.query(
       'SELECT id FROM customers WHERE email = $1',
       [email.toLowerCase()]
@@ -825,21 +831,21 @@ app.post('/api/auth/customer/register', async (req, res) => {
       return res.status(409).json({ message: 'این ایمیل قبلاً ثبت شده است' });
     }
 
-    // هش کردن رمز عبور
+    // ۴. هش کردن رمز عبور
     const passwordHash = await bcrypt.hash(password, saltRounds);
 
-    // ایجاد کاربر جدید
-    const newUser = await pool.query(
+    // ۵. ایجاد کاربر جدید در دیتابیس
+    const newUserResult = await pool.query(
       `INSERT INTO customers (email, password_hash, first_name, last_name, phone) 
        VALUES ($1, $2, $3, $4, $5) 
        RETURNING id, email, first_name, last_name`,
-      [email.toLowerCase(), passwordHash, firstName, lastName, phone]
+      // ⬇️ تغییر درخواستی استاد شما در اینجا اعمال شده است
+      [email.toLowerCase(), passwordHash, firstName || '', lastName || '', phone || '']
     );
 
-    const user = newUser.rows[0];
+    const user = newUserResult.rows[0];
 
-    // ایجاد توکن JWT - باید jsonwebtoken را نصب کنید
-    // فعلاً ساده برمی‌گردانیم
+    // ۶. ارسال پاسخ موفقیت‌آمیز
     res.status(201).json({
       user: {
         id: user.id,
@@ -849,11 +855,12 @@ app.post('/api/auth/customer/register', async (req, res) => {
           lastName: user.last_name
         }
       },
-      token: 'fake-jwt-token-' + user.id // بعداً JWT واقعی
+      token: 'fake-jwt-token-' + user.id // در آینده با توکن واقعی جایگزین شود
     });
+
   } catch (error) {
     console.error('Registration error:', error);
-    res.status(500).json({ message: 'خطا در ثبت نام' });
+    res.status(500).json({ message: 'خطا در فرآیند ثبت نام' });
   }
 });
 

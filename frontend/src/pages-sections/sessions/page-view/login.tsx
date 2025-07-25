@@ -8,86 +8,52 @@ import * as yup from "yup";
 // MUI COMPONENTS
 import Button from "@mui/material/Button";
 import Alert from "@mui/material/Alert";
+import Typography from '@mui/material/Typography';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
-import Typography from '@mui/material/Typography';
-
-// LOCAL CUSTOM COMPONENTS
-import EyeToggleButton from "../components/eye-toggle-button";
-import usePasswordVisible from "../use-password-visible";
 
 // GLOBAL CUSTOM COMPONENTS
 import BazaarTextField from "components/BazaarTextField";
 
+// LOCAL CUSTOM COMPONENTS & HOOKS
+import EyeToggleButton from "../components/eye-toggle-button";
+import usePasswordVisible from "../use-password-visible";
+
+// API
+import authApi from "utils/__api__/auth";
+
 // TYPE DEFINITION
 type UserType = "customer" | "seller";
 
-const LoginPageView = ({ closeDialog }: { closeDialog?: () => void }) => {
-  const { visiblePassword, togglePasswordVisible } = usePasswordVisible();
+const LoginPageView = () => {
   const router = useRouter();
   const [apiError, setApiError] = useState("");
-  const [userType, setUserType] = useState<UserType>("customer"); // State برای نوع کاربر
+  const { visiblePassword, togglePasswordVisible } = usePasswordVisible();
 
-  // --- HANDLERS ---
-  const handleUserTypeChange = (_: any, newUserType: UserType | null) => {
-    // جلوگیری از null شدن مقدار
-    if (newUserType !== null) {
-      setUserType(newUserType);
-    }
-  };
+  // فیلدهای فرم
+  const initialValues = { email: "", password: "" };
 
-  const {
-    values,
-    errors,
-    touched,
-    handleBlur,
-    handleChange,
-    handleSubmit,
-    isSubmitting
-  } = useFormik({
-    initialValues: {
-      email: "",
-      password: ""
-    },
-    validationSchema: yup.object().shape({
-      password: yup.string().required("رمز عبور الزامی است"),
-      email: yup.string().email("ایمیل نامعتبر است").required("ایمیل الزامی است")
-    }),
+  // اعتبارسنجی
+  const validationSchema = yup.object().shape({
+    email: yup.string().email("ایمیل نامعتبر").required("ایمیل الزامی است"),
+    password: yup.string().required("رمز عبور الزامی است")
+  });
+
+  const { values, errors, touched, handleBlur, handleChange, handleSubmit, isSubmitting } = useFormik({
+    initialValues,
+    validationSchema,
     onSubmit: async (values, { setSubmitting }) => {
       setApiError("");
-
-      // تعیین اندپوینت و مسیر ریدایرکت بر اساس نوع کاربر
-      const endpoint = userType === "customer"
-        ? "http://localhost:4000/api/auth/customer/login"
-        : "http://localhost:4000/api/auth/login";
-
-      const redirectPath = userType === "customer" ? "/profile" : "/vendor/dashboard";
-
       try {
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(values),
+        await authApi.loginCustomer({
+          email: values.email,
+          password: values.password
         });
 
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.message || 'خطا در ورود. لطفاً دوباره تلاش کنید.');
-        }
-
-        // ذخیره توکن در حافظه مرورگر
-        const tokenKey = userType === "customer" ? "customer_token" : "vendor_token";
-        localStorage.setItem(tokenKey, data.token);
-        localStorage.setItem("user", JSON.stringify(data.user)); // ذخیره اطلاعات کاربر
-
-        // بستن دیالوگ و هدایت کاربر
-        closeDialog?.();
-        router.push(redirectPath);
-
+        // موفقیت آمیز - به صفحه پروفایل منتقل شود
+        router.push("/profile");
       } catch (error: any) {
-        setApiError(error.message);
-      } finally {
+        setApiError(error.message || "خطا در ورود");
         setSubmitting(false);
       }
     }
@@ -95,26 +61,8 @@ const LoginPageView = ({ closeDialog }: { closeDialog?: () => void }) => {
 
   return (
     <form onSubmit={handleSubmit}>
-      {/* --- انتخاب نوع کاربر --- */}
-      <Typography variant="body2" fontWeight={600} textAlign="center" mb={2}>
-        ورود به عنوان:
-      </Typography>
-      <ToggleButtonGroup
-        fullWidth
-        exclusive
-        color="primary"
-        value={userType}
-        onChange={handleUserTypeChange}
-        sx={{ mb: 2 }}
-      >
-        <ToggleButton value="customer">مشتری</ToggleButton>
-        <ToggleButton value="seller">فروشنده</ToggleButton>
-      </ToggleButtonGroup>
-
-      {/* --- نمایش خطای API --- */}
       {apiError && <Alert severity="error" sx={{ mb: 2 }}>{apiError}</Alert>}
 
-      {/* --- فیلدهای فرم --- */}
       <BazaarTextField
         mb={1.5}
         fullWidth
@@ -125,7 +73,7 @@ const LoginPageView = ({ closeDialog }: { closeDialog?: () => void }) => {
         onBlur={handleBlur}
         value={values.email}
         onChange={handleChange}
-        label="ایمیل"
+        label="Email"
         placeholder="example@mail.com"
         helperText={touched.email && errors.email}
         error={Boolean(touched.email && errors.email)}
@@ -137,7 +85,7 @@ const LoginPageView = ({ closeDialog }: { closeDialog?: () => void }) => {
         fullWidth
         size="small"
         name="password"
-        label="رمز عبور"
+        label="Password"
         autoComplete="on"
         variant="outlined"
         onBlur={handleBlur}

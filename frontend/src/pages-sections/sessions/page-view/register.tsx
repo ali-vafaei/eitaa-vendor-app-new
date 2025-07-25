@@ -1,5 +1,6 @@
 "use client";
-
+import { useRouter } from "next/navigation";
+import authApi from "utils/__api__/auth";
 import Button from "@mui/material/Button";
 import Checkbox from "@mui/material/Checkbox";
 import FormControlLabel from "@mui/material/FormControlLabel";
@@ -18,76 +19,67 @@ import usePasswordVisible from "../use-password-visible";
 import { Span } from "components/Typography";
 import { FlexBox } from "components/flex-box";
 import BazaarTextField from "components/BazaarTextField";
-import { useRouter } from "next/navigation"; // اضافه شده برای هدایت کاربر پس از ثبت نام
+
 
 const RegisterPageView = () => {
   const { visiblePassword, togglePasswordVisible } = usePasswordVisible();
-  const router = useRouter(); // اضافه شده برای هدایت کاربر پس از ثبت نام
+  const router = useRouter();
 
   // COMMON INPUT PROPS FOR TEXT FIELD
   const inputProps = {
     endAdornment: <EyeToggleButton show={visiblePassword} click={togglePasswordVisible} />,
   };
 
-  // REGISTER FORM FIELDS INITIAL VALUES
+  // ✅ تغییر ۱: مقادیر اولیه
   const initialValues = {
-    accountType: "customer", // انتخاب پیش‌فرض مشتری
-    name: "",
+    accountType: "customer",
+    first_name: "", // از 'name' به 'first_name' تغییر کرد
     email: "",
     password: "",
     re_password: "",
     agreement: false,
   };
 
-  // REGISTER FORM FIELD VALIDATION SCHEMA
-const validationSchema = yup.object().shape({
-  accountType: yup.string().required("Please select an account type"),
-  name: yup.string().when("accountType", {
-    is: "customer",
-    then: yup.string().required("Name is required"),
-    otherwise: yup.string().notRequired(),
-  }),
-  email: yup.string().email("Invalid email").required("Email is required"),
-  password: yup.string().required("Password is required"),
-  re_password: yup
-    .string()
-    .oneOf([yup.ref("password"), null], "Passwords must match")
-    .required("Please re-type password"),
-  agreement: yup
-    .bool()
-    .test(
-      "agreement",
-      "You have to agree with our Terms and Conditions!",
-      (value) => value === true
-    )
-    .required("You have to agree with our Terms and Conditions!"),
-});
+  // ✅ تغییر ۲: قوانین اعتبارسنجی
+  const validationSchema = yup.object().shape({
+    accountType: yup.string().required("Please select an account type"),
+    first_name: yup.string().when("accountType", { // از 'name' به 'first_name' تغییر کرد
+      is: "customer",
+      then: (schema) => schema.required("First name is required"),
+    }),
+    email: yup.string().email("Invalid email").required("Email is required"),
+    password: yup.string().required("Password is required"),
+    re_password: yup
+      .string()
+      .oneOf([yup.ref("password")], "Passwords must match")
+      .required("Please re-type password"),
+    agreement: yup
+      .bool()
+      .test(
+        "agreement",
+        "You have to agree with our Terms and Conditions!",
+        (value) => value === true
+      )
+      .required("You have to agree with our Terms and Conditions!"),
+  });
 
   const { values, errors, touched, handleBlur, handleChange, handleSubmit } = useFormik({
     initialValues,
     validationSchema,
+    // ✅ تغییر ۳: تابع ارسال
     onSubmit: async (values) => {
-      const endpoint =
-        values.accountType === "customer"
-          ? "/api/auth/register/customer"
-          : "/api/auth/register/seller"; // مسیر ثبت نام متفاوت بر اساس نوع حساب
       try {
-        const response = await fetch(`http://localhost:4000${endpoint}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(values),
+        await authApi.registerCustomer({
+          email: values.email,
+          password: values.password,
+          first_name: values.first_name // از 'name' به 'first_name' تغییر کرد
         });
-        const data = await response.json();
-        if (response.ok) {
-          router.push(values.accountType === "customer" ? "/profile" : "/admin"); // هدایت کاربر بر اساس نوع حساب
-        } else {
-          alert(data.message || "خطا در ثبت‌نام");
-        }
-      } catch (error) {
-        console.error("Register Error:", error);
-        alert("خطا در ارتباط با سرور");
+
+        router.push("/profile");
+      } catch (error: any) {
+        alert(error.message || "خطا در ثبت نام");
       }
-    },
+    }
   });
 
   return (
@@ -105,20 +97,21 @@ const validationSchema = yup.object().shape({
         </RadioGroup>
       </FormControl>
 
+      {/* ✅ تغییر ۴: فیلد فرم */}
       {values.accountType === "customer" && (
         <BazaarTextField
           mb={1.5}
           fullWidth
-          name="name"
+          name="first_name" // از 'name' به 'first_name' تغییر کرد
           size="small"
-          label="Full Name"
+          label="First Name" // از 'Full Name' به 'First Name' تغییر کرد
           variant="outlined"
           onBlur={handleBlur}
-          value={values.name}
+          value={values.first_name} // از 'values.name' به 'values.first_name' تغییر کرد
           onChange={handleChange}
-          placeholder="Ralph Awards"
-          error={!!touched.name && !!errors.name}
-          helperText={(touched.name && errors.name) as string}
+          placeholder="Ali"
+          error={!!touched.first_name && !!errors.first_name} // از 'name' به 'first_name' تغییر کرد
+          helperText={(touched.first_name && errors.first_name) as string} // از 'name' به 'first_name' تغییر کرد
         />
       )}
 
@@ -132,8 +125,8 @@ const validationSchema = yup.object().shape({
         onBlur={handleBlur}
         value={values.email}
         onChange={handleChange}
-        label="Email or Phone Number"
-        placeholder="exmple@mail.com"
+        label="Email"
+        placeholder="example@mail.com"
         error={!!touched.email && !!errors.email}
         helperText={(touched.email && errors.email) as string}
       />
@@ -152,7 +145,7 @@ const validationSchema = yup.object().shape({
         value={values.password}
         type={visiblePassword ? "text" : "password"}
         error={!!touched.password && !!errors.password}
-        helperText={touched.password && errors.password}
+        helperText={(touched.password && errors.password) as string}
         InputProps={inputProps}
       />
 
@@ -169,7 +162,7 @@ const validationSchema = yup.object().shape({
         value={values.re_password}
         type={visiblePassword ? "text" : "password"}
         error={!!touched.re_password && !!errors.re_password}
-        helperText={touched.re_password && errors.re_password}
+        helperText={(touched.re_password && errors.re_password) as string}
         InputProps={inputProps}
       />
 

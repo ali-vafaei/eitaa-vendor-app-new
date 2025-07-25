@@ -1,4 +1,5 @@
 import axios from "../axiosInstance";
+import { useRouter } from "next/navigation";
 
 interface LoginData {
   email: string;
@@ -8,61 +9,103 @@ interface LoginData {
 interface RegisterData {
   email: string;
   password: string;
-  firstName?: string;
-  lastName?: string;
-  phone?: string;
+  name: string;
 }
 
 // ورود کاربر
-export const login = async (data: LoginData) => {
-  const response = await axios.post("/api/auth/customer/login", data);
+export const loginCustomer = async (data: LoginData) => {
+  try {
+    const response = await axios.post("/api/auth/customer/login", data);
 
-  // ذخیره توکن در localStorage
-  if (response.data.token) {
-    localStorage.setItem("token", response.data.token);
-    localStorage.setItem("user", JSON.stringify(response.data.user));
+    if (response.data.token) {
+      localStorage.setItem("token", response.data.token);
+      localStorage.setItem("user", JSON.stringify(response.data.user));
+      localStorage.setItem("userType", "customer");
+    }
+
+    return response.data;
+  } catch (error: any) {
+    throw new Error(error.response?.data?.message || "خطا در ورود");
   }
-
-  return response.data;
 };
 
 // ثبت نام کاربر
-export const register = async (data: RegisterData) => {
-  const response = await axios.post("/api/auth/customer/register", data);
+export const registerCustomer = async (data: RegisterData) => {
+  try {
+    // تقسیم نام به firstName و lastName
+    const nameParts = data.name.split(' ');
+    const firstName = nameParts[0];
+    const lastName = nameParts.slice(1).join(' ') || '';
 
-  // ذخیره توکن در localStorage
-  if (response.data.token) {
-    localStorage.setItem("token", response.data.token);
-    localStorage.setItem("user", JSON.stringify(response.data.user));
+    const response = await axios.post("/api/auth/customer/register", {
+      email: data.email,
+      password: data.password,
+      firstName,
+      lastName
+    });
+
+    if (response.data.token) {
+      localStorage.setItem("token", response.data.token);
+      localStorage.setItem("user", JSON.stringify(response.data.user));
+      localStorage.setItem("userType", "customer");
+    }
+
+    return response.data;
+  } catch (error: any) {
+    throw new Error(error.response?.data?.message || "خطا در ثبت نام");
   }
-
-  return response.data;
 };
 
-// خروج کاربر
+// ورود فروشنده
+export const loginVendor = async (data: LoginData) => {
+  try {
+    const response = await axios.post("/api/auth/login", data);
+
+    if (response.data.token) {
+      localStorage.setItem("token", response.data.token);
+      localStorage.setItem("user", JSON.stringify(response.data.user));
+      localStorage.setItem("userType", "vendor");
+    }
+
+    return response.data;
+  } catch (error: any) {
+    throw new Error(error.response?.data?.message || "خطا در ورود");
+  }
+};
+
+// خروج
 export const logout = () => {
-  localStorage.removeItem("token");
-  localStorage.removeItem("user");
-  window.location.href = "/login";
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    localStorage.removeItem("userType");
+    window.location.href = "/login";
+  }
 };
 
-// دریافت اطلاعات کاربر فعلی
+// دریافت کاربر فعلی
 export const getCurrentUser = () => {
-  const userStr = localStorage.getItem("user");
-  if (userStr) {
-    return JSON.parse(userStr);
+  if (typeof window !== 'undefined') {
+    const userStr = localStorage.getItem("user");
+    if (userStr) {
+      return JSON.parse(userStr);
+    }
   }
   return null;
 };
 
-// بررسی لاگین بودن
+// بررسی احراز هویت
 export const isAuthenticated = () => {
-  return !!localStorage.getItem("token");
+  if (typeof window !== 'undefined') {
+    return !!localStorage.getItem("token");
+  }
+  return false;
 };
 
 export default {
-  login,
-  register,
+  loginCustomer,
+  registerCustomer,
+  loginVendor,
   logout,
   getCurrentUser,
   isAuthenticated
