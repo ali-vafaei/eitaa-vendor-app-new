@@ -105,28 +105,62 @@ app.post('/api/create-admin', async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 });
+// ==========================================================
+//               بخش احراز هویت (نسخه نهایی و تمیز)
+// ==========================================================
 
-// --- بخش احراز هویت ---
-app.post('/api/auth/register', async (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password) {
-    return res.status(400).json({ message: 'ایمیل و رمز عبور الزامی است.' });
+// ثبت نام مشتری
+app.post('/api/auth/register/customer', async (req, res) => {
+  const { email, password, first_name } = req.body;
+  if (!email || !password || !first_name) {
+    return res.status(400).json({ message: 'ایمیل، رمز عبور و نام الزامی هستند.' });
   }
   try {
     const password_hash = await bcrypt.hash(password, saltRounds);
-    const newUser = await pool.query(
-      'INSERT INTO sellers (email, password_hash) VALUES ($1, $2) RETURNING id, email',
-      [email.toLowerCase(), password_hash]
+    const newCustomer = await pool.query(
+      'INSERT INTO customers (email, password_hash, first_name) VALUES ($1, $2, $3) RETURNING id, email, first_name',
+      [email.toLowerCase(), password_hash, first_name]
     );
-    res.status(201).json(newUser.rows[0]);
+    const user = newCustomer.rows[0];
+    res.status(201).json({
+      user: { id: user.id, email: user.email, name: { firstName: user.first_name } },
+      token: 'fake-jwt-token-for-customer-' + user.id
+    });
   } catch (error) {
     if (error.code === '23505') {
       return res.status(409).json({ message: 'این ایمیل قبلاً ثبت شده است.' });
     }
-    console.error('Register Error:', error.message);
-    res.status(500).json({ message: 'خطا در فرآیند ثبت‌نام' });
+    console.error('Register Customer Error:', error.message);
+    res.status(500).json({ message: 'خطا در فرآیند ثبت‌نام مشتری' });
   }
 });
+
+// ثبت نام فروشنده
+app.post('/api/auth/register/seller', async (req, res) => {
+  const { email, password } = req.body; // فروشنده فقط ایمیل و پسورد نیاز دارد
+  if (!email || !password) {
+    return res.status(400).json({ message: 'ایمیل و رمز عبور الزامی هستند.' });
+  }
+  try {
+    const password_hash = await bcrypt.hash(password, saltRounds);
+    const newSeller = await pool.query(
+      'INSERT INTO sellers (email, password_hash) VALUES ($1, $2) RETURNING id, email',
+      [email.toLowerCase(), password_hash]
+    );
+    const seller = newSeller.rows[0];
+    res.status(201).json({
+      user: { id: seller.id, email: seller.email },
+      token: 'fake-jwt-token-for-seller-' + seller.id
+    });
+  } catch (error) {
+    if (error.code === '23505') {
+      return res.status(409).json({ message: 'این ایمیل قبلاً ثبت شده است.' });
+    }
+    console.error('Register Seller Error:', error.message);
+    res.status(500).json({ message: 'خطا در فرآیند ثبت‌نام فروشنده' });
+  }
+});
+
 
 // ورود کاربر (مشتری) - نسخه اصلاح شده
 app.post('/api/auth/customer/login', async (req, res) => {
@@ -811,9 +845,11 @@ app.get('/api/fashion-shop-2/service', async (req, res) => {
 // const saltRounds = 10;
 
 // ثبت نام کاربر
-app.post('/api/auth/customer/register', async (req, res) => {
+app.post('/api/auth/register/customer', async (req, res) => {
   // ۱. دریافت اطلاعات از بدنه درخواست
-  const { email, password, firstName, lastName, phone } = req.body;
+  const { email, password, firstName, first_name, lastName, last_name, phone } = req.body;
+  const finalFirstName = firstName || first_name || '';
+  const finalLastName = lastName || last_name || '';
 
   // ۲. بررسی ورودی‌های الزامی
   if (!email || !password) {
@@ -840,7 +876,7 @@ app.post('/api/auth/customer/register', async (req, res) => {
        VALUES ($1, $2, $3, $4, $5) 
        RETURNING id, email, first_name, last_name`,
       // ⬇️ تغییر درخواستی استاد شما در اینجا اعمال شده است
-      [email.toLowerCase(), passwordHash, firstName || '', lastName || '', phone || '']
+      [email.toLowerCase(), passwordHash, finalFirstName, finalLastName, phone || '']
     );
 
     const user = newUserResult.rows[0];
@@ -865,7 +901,7 @@ app.post('/api/auth/customer/register', async (req, res) => {
 });
 
 // ورود کاربر
-app.post('/api/auth/customer/login', async (req, res) => {
+app.post('/api/auth/login/customer', async (req, res) => {
   const { email, password } = req.body;
 
   if (!email || !password) {

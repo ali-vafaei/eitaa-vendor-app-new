@@ -1,21 +1,34 @@
 import axios from "../axiosInstance";
-import { useRouter } from "next/navigation";
+
+// ==========================================================
+//               بخش اینترفیس‌ها (Interfaces)
+// ==========================================================
 
 interface LoginData {
   email: string;
   password: string;
 }
 
-interface RegisterData {
+interface RegisterCustomerData {
   email: string;
   password: string;
-  name: string;
+  first_name: string;
 }
 
-// ورود کاربر
+// اینترفیس برای داده‌های ثبت‌نام فروشنده
+interface RegisterSellerData {
+  email: string;
+  password: string;
+}
+
+// ==========================================================
+//                بخش توابع API (Functions)
+// ==========================================================
+
+// ورود مشتری
 export const loginCustomer = async (data: LoginData) => {
   try {
-    const response = await axios.post("/api/auth/customer/login", data);
+    const response = await axios.post("/api/auth/login/customer", data);
 
     if (response.data.token) {
       localStorage.setItem("token", response.data.token);
@@ -29,20 +42,10 @@ export const loginCustomer = async (data: LoginData) => {
   }
 };
 
-// ثبت نام کاربر
-export const registerCustomer = async (data: RegisterData) => {
+// ثبت نام مشتری
+export const registerCustomer = async (data: RegisterCustomerData) => {
   try {
-    // تقسیم نام به firstName و lastName
-    const nameParts = data.name.split(' ');
-    const firstName = nameParts[0];
-    const lastName = nameParts.slice(1).join(' ') || '';
-
-    const response = await axios.post("/api/auth/customer/register", {
-      email: data.email,
-      password: data.password,
-      firstName,
-      lastName
-    });
+    const response = await axios.post("/api/auth/register/customer", data);
 
     if (response.data.token) {
       localStorage.setItem("token", response.data.token);
@@ -52,7 +55,24 @@ export const registerCustomer = async (data: RegisterData) => {
 
     return response.data;
   } catch (error: any) {
-    throw new Error(error.response?.data?.message || "خطا در ثبت نام");
+    console.error("Error details from registerCustomer:", error.response?.data || error.message);
+    throw new Error(error.response?.data?.message || "خطا در ثبت نام. لطفاً دوباره تلاش کنید.");
+  }
+};
+
+// ✅ تابع ثبت نام فروشنده که تعریف نشده بود، اضافه شد
+export const registerSeller = async (data: RegisterSellerData) => {
+  try {
+    const response = await axios.post("/api/auth/register/seller", data);
+    if (response.data.token) {
+      localStorage.setItem("token", response.data.token);
+      localStorage.setItem("user", JSON.stringify(response.data.user));
+      localStorage.setItem("userType", "seller");
+    }
+    return response.data;
+  } catch (error: any) {
+    console.error("Seller Register API Error:", error.response?.data);
+    throw new Error(error.response?.data?.message || "خطا در ثبت نام فروشنده");
   }
 };
 
@@ -102,9 +122,14 @@ export const isAuthenticated = () => {
   return false;
 };
 
+// ==========================================================
+//                بخش خروجی (Export Default)
+// ==========================================================
+
 export default {
   loginCustomer,
   registerCustomer,
+  registerSeller, // حالا این تابع وجود دارد و خطا نمی‌دهد
   loginVendor,
   logout,
   getCurrentUser,

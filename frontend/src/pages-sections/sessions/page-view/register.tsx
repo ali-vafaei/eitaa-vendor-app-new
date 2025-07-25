@@ -69,14 +69,29 @@ const RegisterPageView = () => {
     // ✅ تغییر ۳: تابع ارسال
     onSubmit: async (values) => {
       try {
-        await authApi.registerCustomer({
-          email: values.email,
-          password: values.password,
-          first_name: values.first_name // از 'name' به 'first_name' تغییر کرد
-        });
+        // بررسی نوع حساب انتخاب شده توسط کاربر
+        if (values.accountType === "customer") {
+          // اگر کاربر "مشتری" را انتخاب کرده بود
+          await authApi.registerCustomer({
+            email: values.email,
+            password: values.password,
+            first_name: values.first_name,
+          });
+          // هدایت به صفحه پروفایل مشتری
+          router.push("/profile");
 
-        router.push("/profile");
-      } catch (error: any) {
+        } else if (values.accountType === "seller") {
+          // اگر کاربر "فروشنده" را انتخاب کرده بود
+          await authApi.registerSeller({
+            email: values.email,
+            password: values.password,
+            // فروشنده فقط ایمیل و پسورد نیاز دارد
+          });
+          // هدایت به داشبورد فروشنده
+          router.push("/vendor/dashboard");
+        }
+     } catch (error: any) {
+        console.error("DEBUG: Registration failed:", error);
         alert(error.message || "خطا در ثبت نام");
       }
     }
