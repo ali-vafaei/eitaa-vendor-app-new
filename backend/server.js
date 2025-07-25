@@ -128,37 +128,88 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
-app.post('/api/auth/login', async (req, res) => {
+// ورود کاربر (مشتری) - نسخه اصلاح شده
+app.post('/api/auth/customer/login', async (req, res) => {
   const { email, password } = req.body;
+  console.log(`\n[LOGIN ATTEMPT] Received login request for CUSTOMER: ${email}`);
 
-  // Admin bypass
-  if (email === 'admin@test.com' && password === 'secret') {
-    return res.status(200).json({
-      message: 'ورود موفقیت‌آمیز بود!',
-      token: 'fake-jwt-token-for-seller',
-      user: { id: 1, email: 'admin@test.com' }
-    });
+  if (!email || !password) {
+    console.log('[LOGIN FAILED] Email or password was not provided.');
+    return res.status(400).json({ message: 'ایمیل و رمز عبور الزامی است' });
   }
 
   try {
-    const userResult = await pool.query('SELECT * FROM sellers WHERE email = $1', [email.toLowerCase()]);
+    // مرحله ۱: پیدا کردن کاربر در جدول درست (customers)
+    const userResult = await pool.query(
+      'SELECT * FROM customers WHERE email = $1', // <--- مشکل اینجا بود! باید customers باشد
+      [email.toLowerCase()]
+    );
+
     if (userResult.rows.length === 0) {
-      return res.status(401).json({ message: 'ایمیل یا رمز عبور نامعتبر است.' });
+      console.log(`[LOGIN FAILED] Customer with email "${email}" not found in database.`);
+      return res.status(401).json({ message: 'ایمیل یا رمز عبور نامعتبر است' });
     }
+
     const user = userResult.rows[0];
-    const isMatch = await bcrypt.compare(password, user.password_hash);
-    if (!isMatch) {
-      return res.status(401).json({ message: 'ایمیل یا رمز عبور نامعتبر است.' });
+    console.log(`[LOGIN STEP] Customer found: ${user.email}. Comparing passwords...`);
+
+    // مرحله ۲: مقایسه کردن رمز عبور وارد شده با هش ذخیره شده
+    const validPassword = await bcrypt.compare(password, user.password_hash);
+
+    if (!validPassword) {
+      console.log(`[LOGIN FAILED] Password comparison failed for customer: ${user.email}`);
+      return res.status(401).json({ message: 'ایمیل یا رمز عبور نامعتبر است' });
     }
-    res.status(200).json({
-      message: 'ورود موفقیت‌آمیز بود!',
-      token: 'fake-jwt-token-for-seller',
-      user: { id: user.id, email: user.email }
+
+    // مرحله ۳: موفقیت! ساخت توکن و ارسال پاسخ
+    console.log(`[LOGIN SUCCESS] Passwords match for ${user.email}. Generating token...`);
+
+    const token = 'fake-jwt-token-for-customer-' + user.id;
+
+    res.json({
+      user: {
+        id: user.id,
+        email: user.email,
+        phone: user.phone,
+        avatar: user.avatar || '/assets/images/avatars/001-man.svg',
+        verified: user.verified,
+        name: {
+          firstName: user.first_name || '',
+          lastName: user.last_name || ''
+        }
+      },
+      token: token
     });
+
   } catch (error) {
-    console.error('Login Error:', error.message);
-    res.status(500).json({ message: 'خطا در فرآیند ورود' });
+    console.error('[LOGIN ERROR] An unexpected error occurred:', error);
+    res.status(500).json({ message: 'خطا در سرور هنگام ورود' });
   }
+});
+
+// این کد را هم برای ورود فروشندگان نگه می‌داریم تا بعداً دچار مشکل نشوید
+app.post('/api/auth/login', async (req, res) => {
+    // این قسمت برای لاگین فروشندگان است و به آن دست نمی‌زنیم
+    const { email, password } = req.body;
+    try {
+        const userResult = await pool.query('SELECT * FROM sellers WHERE email = $1', [email.toLowerCase()]);
+        if (userResult.rows.length === 0) {
+            return res.status(401).json({ message: 'ایمیل یا رمز عبور فروشنده نامعتبر است.' });
+        }
+        const user = userResult.rows[0];
+        const isMatch = await bcrypt.compare(password, user.password_hash);
+        if (!isMatch) {
+            return res.status(401).json({ message: 'ایمیل یا رمز عبور فروشنده نامعتبر است.' });
+        }
+        res.status(200).json({
+            message: 'ورود موفقیت‌آمیز بود!',
+            token: 'fake-jwt-token-for-seller-' + user.id,
+            user: { id: user.id, email: user.email }
+        });
+    } catch (error) {
+        console.error('Seller Login Error:', error.message);
+        res.status(500).json({ message: 'خطا در فرآیند ورود فروشنده' });
+    }
 });
 
 // --- بخش مدیریت محصولات ---
@@ -708,6 +759,266 @@ app.get('/api/products/search', async (req, res) => {
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ message: 'خطا در جستجو' });
+  }
+});
+
+// دریافت دسته‌بندی‌ها
+app.get('/api/categories', async (req, res) => {
+  try {
+    // دسته‌بندی‌های ثابت برای نمایش در منو
+    const categories = [
+      { id: 1, name: 'لباس', slug: 'clothing', icon: 'dress' },
+      { id: 2, name: 'کفش', slug: 'shoes', icon: 'shoe' },
+      { id: 3, name: 'الکترونیک', slug: 'electronics', icon: 'laptop' },
+      { id: 4, name: 'زیبایی', slug: 'beauty', icon: 'gift' },
+      { id: 5, name: 'ورزشی', slug: 'sports', icon: 'basketball' }
+    ];
+    res.json(categories);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'خطا در دریافت دسته‌بندی‌ها' });
+  }
+});
+
+// API برای سایر صفحات
+app.get('/api/fashion-shop-2/category', async (req, res) => {
+  try {
+    const categories = [
+      { id: 1, name: 'لباس مردانه', slug: 'mens-clothing' },
+      { id: 2, name: 'لباس زنانه', slug: 'womens-clothing' },
+      { id: 3, name: 'کفش', slug: 'shoes' },
+      { id: 4, name: 'اکسسوری', slug: 'accessories' }
+    ];
+    res.json(categories);
+  } catch (err) {
+    res.status(500).json({ message: 'خطا' });
+  }
+});
+
+// سرویس‌ها
+app.get('/api/fashion-shop-2/service', async (req, res) => {
+  const services = [
+    { id: 1, title: 'ارسال رایگان', description: 'برای خرید بالای 500 هزار تومان' },
+    { id: 2, title: 'پشتیبانی 24/7', description: 'پاسخگویی در تمام ساعات' },
+    { id: 3, title: 'ضمانت بازگشت وجه', description: 'تا 7 روز پس از خرید' }
+  ];
+  res.json(services);
+});
+// ===== API های کاربران (مشتریان) =====
+
+// ثبت نام کاربر
+app.post('/api/auth/customer/register', async (req, res) => {
+  const { email, password, firstName, lastName, phone } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({ message: 'ایمیل و رمز عبور الزامی است' });
+  }
+
+  try {
+    // بررسی وجود کاربر
+    const existingUser = await pool.query(
+      'SELECT id FROM customers WHERE email = $1',
+      [email.toLowerCase()]
+    );
+
+    if (existingUser.rows.length > 0) {
+      return res.status(409).json({ message: 'این ایمیل قبلاً ثبت شده است' });
+    }
+
+    // هش کردن رمز عبور
+    const passwordHash = await bcrypt.hash(password, saltRounds);
+
+    // ایجاد کاربر جدید
+    const newUser = await pool.query(
+      `INSERT INTO customers (email, password_hash, first_name, last_name, phone) 
+       VALUES ($1, $2, $3, $4, $5) 
+       RETURNING id, email, first_name, last_name`,
+      [email.toLowerCase(), passwordHash, firstName, lastName, phone]
+    );
+
+    const user = newUser.rows[0];
+
+    // ایجاد توکن JWT - باید jsonwebtoken را نصب کنید
+    // فعلاً ساده برمی‌گردانیم
+    res.status(201).json({
+      user: {
+        id: user.id,
+        email: user.email,
+        name: {
+          firstName: user.first_name,
+          lastName: user.last_name
+        }
+      },
+      token: 'fake-jwt-token-' + user.id // بعداً JWT واقعی
+    });
+  } catch (error) {
+    console.error('Registration error:', error);
+    res.status(500).json({ message: 'خطا در ثبت نام' });
+  }
+});
+
+// ورود کاربر
+app.post('/api/auth/customer/login', async (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({ message: 'ایمیل و رمز عبور الزامی است' });
+  }
+
+  try {
+    const userResult = await pool.query(
+      'SELECT * FROM customers WHERE email = $1',
+      [email.toLowerCase()]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(401).json({ message: 'ایمیل یا رمز عبور اشتباه است' });
+    }
+
+    const user = userResult.rows[0];
+    const validPassword = await bcrypt.compare(password, user.password_hash);
+
+    if (!validPassword) {
+      return res.status(401).json({ message: 'ایمیل یا رمز عبور اشتباه است' });
+    }
+
+    res.json({
+      user: {
+        id: user.id,
+        email: user.email,
+        phone: user.phone,
+        avatar: user.avatar || '/assets/images/avatars/001-man.svg',
+        verified: user.verified,
+        name: {
+          firstName: user.first_name || '',
+          lastName: user.last_name || ''
+        }
+      },
+      token: 'fake-jwt-token-' + user.id
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ message: 'خطا در ورود' });
+  }
+});
+
+// دریافت اطلاعات کاربر
+app.get('/api/user-list/1', async (req, res) => {
+  // فعلاً یک کاربر نمونه برمی‌گردانیم
+  // بعداً از توکن JWT استفاده می‌کنیم
+  try {
+    const userResult = await pool.query(
+      'SELECT * FROM customers LIMIT 1'
+    );
+
+    if (userResult.rows.length === 0) {
+      // کاربر پیش‌فرض
+      return res.json({
+        id: "1",
+        email: "test@example.com",
+        phone: "09123456789",
+        avatar: "/assets/images/avatars/001-man.svg",
+        verified: true,
+        name: {
+          firstName: "کاربر",
+          lastName: "تست"
+        }
+      });
+    }
+
+    const user = userResult.rows[0];
+    res.json({
+      id: user.id,
+      email: user.email,
+      phone: user.phone,
+      avatar: user.avatar || '/assets/images/avatars/001-man.svg',
+      verified: user.verified,
+      name: {
+        firstName: user.first_name || '',
+        lastName: user.last_name || ''
+      }
+    });
+  } catch (error) {
+    console.error('Get user error:', error);
+    res.status(500).json({ message: 'خطا در دریافت اطلاعات کاربر' });
+  }
+});
+
+// سفارشات کاربر
+app.get('/api/users/orders', async (req, res) => {
+  try {
+    // فعلاً لیست خالی
+    res.json([]);
+  } catch (error) {
+    res.status(500).json({ message: 'خطا در دریافت سفارشات' });
+  }
+});
+
+// آدرس‌های کاربر
+app.get('/api/address/user', async (req, res) => {
+  try {
+    // بعداً از customer_id واقعی استفاده می‌کنیم
+    const addresses = await pool.query(
+      'SELECT * FROM customer_addresses WHERE customer_id = 1'
+    );
+
+    res.json(addresses.rows.map(addr => ({
+      id: addr.id,
+      title: addr.title,
+      street: addr.street,
+      city: addr.city,
+      state: addr.state,
+      country: addr.country,
+      zip: addr.zip,
+      phone: addr.phone,
+      isDefault: addr.is_default
+    })));
+  } catch (error) {
+    res.status(500).json({ message: 'خطا در دریافت آدرس‌ها' });
+  }
+});
+
+// مسیر ثبت نام مشتری
+app.post('/api/auth/register/customer', async (req, res) => {
+  const { email, password, first_name } = req.body;
+  if (!email || !password || !first_name) {
+    return res.status(400).json({ message: 'ایمیل، رمز عبور و نام الزامی هستند.' });
+  }
+  try {
+    const password_hash = await bcrypt.hash(password, saltRounds);
+    const newCustomer = await pool.query(
+      'INSERT INTO customers (email, password_hash, first_name) VALUES ($1, $2, $3) RETURNING id, email, first_name',
+      [email.toLowerCase(), password_hash, first_name]
+    );
+    res.status(201).json(newCustomer.rows[0]);
+  } catch (error) {
+    if (error.code === '23505') {
+      return res.status(409).json({ message: 'این ایمیل قبلاً ثبت شده است.' });
+    }
+    console.error('Register Customer Error:', error.message);
+    res.status(500).json({ message: 'خطا در فرآیند ثبت‌نام مشتری' });
+  }
+});
+
+// مسیر ثبت نام فروشنده
+app.post('/api/auth/register/seller', async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ message: 'ایمیل و رمز عبور الزامی هستند.' });
+  }
+  try {
+    const password_hash = await bcrypt.hash(password, saltRounds);
+    const newSeller = await pool.query(
+      'INSERT INTO sellers (email, password_hash) VALUES ($1, $2) RETURNING id, email',
+      [email.toLowerCase(), password_hash]
+    );
+    res.status(201).json(newSeller.rows[0]);
+  } catch (error) {
+    if (error.code === '23505') {
+      return res.status(409).json({ message: 'این ایمیل قبلاً ثبت شده است.' });
+    }
+    console.error('Register Seller Error:', error.message);
+    res.status(500).json({ message: 'خطا در فرآیند ثبت‌نام فروشنده' });
   }
 });
 // --- شروع سرور ---

@@ -3,6 +3,10 @@
 import Button from "@mui/material/Button";
 import Checkbox from "@mui/material/Checkbox";
 import FormControlLabel from "@mui/material/FormControlLabel";
+import RadioGroup from "@mui/material/RadioGroup";
+import FormControl from "@mui/material/FormControl";
+import FormLabel from "@mui/material/FormLabel";
+import Radio from "@mui/material/Radio";
 import { useFormik } from "formik";
 import * as yup from "yup";
 // LOCAL CUSTOM COMPONENTS
@@ -14,28 +18,36 @@ import usePasswordVisible from "../use-password-visible";
 import { Span } from "components/Typography";
 import { FlexBox } from "components/flex-box";
 import BazaarTextField from "components/BazaarTextField";
+import { useRouter } from "next/navigation"; // اضافه شده برای هدایت کاربر پس از ثبت نام
 
 const RegisterPageView = () => {
   const { visiblePassword, togglePasswordVisible } = usePasswordVisible();
+  const router = useRouter(); // اضافه شده برای هدایت کاربر پس از ثبت نام
 
   // COMMON INPUT PROPS FOR TEXT FIELD
   const inputProps = {
-    endAdornment: <EyeToggleButton show={visiblePassword} click={togglePasswordVisible} />
+    endAdornment: <EyeToggleButton show={visiblePassword} click={togglePasswordVisible} />,
   };
 
   // REGISTER FORM FIELDS INITIAL VALUES
   const initialValues = {
+    accountType: "customer", // انتخاب پیش‌فرض مشتری
     name: "",
     email: "",
     password: "",
     re_password: "",
-    agreement: false
+    agreement: false,
   };
 
   // REGISTER FORM FIELD VALIDATION SCHEMA
   const validationSchema = yup.object().shape({
-    name: yup.string().required("Name is required"),
-    email: yup.string().email("invalid email").required("Email is required"),
+    accountType: yup.string().required("Please select an account type"),
+    name: yup.string().when("accountType", {
+      is: "customer",
+      then: yup.string().required("Name is required"),
+      otherwise: yup.string().notRequired(),
+    }),
+    email: yup.string().email("Invalid email").required("Email is required"),
     password: yup.string().required("Password is required"),
     re_password: yup
       .string()
@@ -48,33 +60,67 @@ const RegisterPageView = () => {
         "You have to agree with our Terms and Conditions!",
         (value) => value === true
       )
-      .required("You have to agree with our Terms and Conditions!")
+      .required("You have to agree with our Terms and Conditions!"),
   });
 
   const { values, errors, touched, handleBlur, handleChange, handleSubmit } = useFormik({
     initialValues,
     validationSchema,
-    onSubmit: (values) => {
-      console.log(values);
-    }
+    onSubmit: async (values) => {
+      const endpoint =
+        values.accountType === "customer"
+          ? "/api/auth/register/customer"
+          : "/api/auth/register/seller"; // مسیر ثبت نام متفاوت بر اساس نوع حساب
+      try {
+        const response = await fetch(`http://localhost:4000${endpoint}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(values),
+        });
+        const data = await response.json();
+        if (response.ok) {
+          router.push(values.accountType === "customer" ? "/profile" : "/admin"); // هدایت کاربر بر اساس نوع حساب
+        } else {
+          alert(data.message || "خطا در ثبت‌نام");
+        }
+      } catch (error) {
+        console.error("Register Error:", error);
+        alert("خطا در ارتباط با سرور");
+      }
+    },
   });
 
   return (
     <form onSubmit={handleSubmit}>
-      <BazaarTextField
-        mb={1.5}
-        fullWidth
-        name="name"
-        size="small"
-        label="Full Name"
-        variant="outlined"
-        onBlur={handleBlur}
-        value={values.name}
-        onChange={handleChange}
-        placeholder="Ralph Awards"
-        error={!!touched.name && !!errors.name}
-        helperText={(touched.name && errors.name) as string}
-      />
+      <FormControl component="fieldset" sx={{ mb: 2 }}>
+        <FormLabel component="legend">Account Type</FormLabel>
+        <RadioGroup
+          name="accountType"
+          value={values.accountType}
+          onChange={handleChange}
+          row
+        >
+          <FormControlLabel value="customer" control={<Radio />} label="Customer" />
+          <FormControlLabel value="seller" control={<Radio />} label="Seller" />
+        </RadioGroup>
+      </FormControl>
+
+      {values.accountType === "customer" && (
+        <BazaarTextField
+          mb={1.5}
+          fullWidth
+          name="name"
+          size="small"
+          label="Full Name"
+          variant="outlined"
+          onBlur={handleBlur}
+          value={values.name}
+          onChange={handleChange}
+          placeholder="Ralph Awards"
+          error={!!touched.name && !!errors.name}
+          helperText={(touched.name && errors.name) as string}
+        />
+      )}
 
       <BazaarTextField
         mb={1.5}

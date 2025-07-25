@@ -1,34 +1,40 @@
-// src/pages-sections/sessions/page-view/login.tsx (نسخه نهایی و اصلاح شده)
-
 "use client";
 
-import { useState } from "react";                  // ---> اضافه شد
-import { useRouter } from "next/navigation";       // ---> اضافه شد
-import Button from "@mui/material/Button";
-import Alert from "@mui/material/Alert";           // ---> اضافه شد
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useFormik } from "formik";
 import * as yup from "yup";
+
+// MUI COMPONENTS
+import Button from "@mui/material/Button";
+import Alert from "@mui/material/Alert";
+import ToggleButton from '@mui/material/ToggleButton';
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
+import Typography from '@mui/material/Typography';
+
 // LOCAL CUSTOM COMPONENTS
 import EyeToggleButton from "../components/eye-toggle-button";
-// LOCAL CUSTOM HOOK
 import usePasswordVisible from "../use-password-visible";
+
 // GLOBAL CUSTOM COMPONENTS
 import BazaarTextField from "components/BazaarTextField";
 
+// TYPE DEFINITION
+type UserType = "customer" | "seller";
 
 const LoginPageView = ({ closeDialog }: { closeDialog?: () => void }) => {
   const { visiblePassword, togglePasswordVisible } = usePasswordVisible();
-  const router = useRouter();                             // ---> اضافه شد
-  const [apiError, setApiError] = useState("");           // ---> اضافه شد
+  const router = useRouter();
+  const [apiError, setApiError] = useState("");
+  const [userType, setUserType] = useState<UserType>("customer"); // State برای نوع کاربر
 
-  // LOGIN FORM FIELDS INITIAL VALUES
-  const initialValues = { email: "", password: "" };
-
-  // LOGIN FORM FIELD VALIDATION SCHEMA
-  const validationSchema = yup.object().shape({
-    password: yup.string().required("Password is required"),
-    email: yup.string().email("invalid email").required("Email is required")
-  });
+  // --- HANDLERS ---
+  const handleUserTypeChange = (_: any, newUserType: UserType | null) => {
+    // جلوگیری از null شدن مقدار
+    if (newUserType !== null) {
+      setUserType(newUserType);
+    }
+  };
 
   const {
     values,
@@ -37,35 +43,47 @@ const LoginPageView = ({ closeDialog }: { closeDialog?: () => void }) => {
     handleBlur,
     handleChange,
     handleSubmit,
-    isSubmitting // ---> اضافه شد
+    isSubmitting
   } = useFormik({
-    initialValues,
-    validationSchema,
-    // ---> onSubmit به طور کامل تغییر کرد <---
+    initialValues: {
+      email: "",
+      password: ""
+    },
+    validationSchema: yup.object().shape({
+      password: yup.string().required("رمز عبور الزامی است"),
+      email: yup.string().email("ایمیل نامعتبر است").required("ایمیل الزامی است")
+    }),
     onSubmit: async (values, { setSubmitting }) => {
-      setApiError(""); // ریست کردن خطای قبلی
+      setApiError("");
+
+      // تعیین اندپوینت و مسیر ریدایرکت بر اساس نوع کاربر
+      const endpoint = userType === "customer"
+        ? "http://localhost:4000/api/auth/customer/login"
+        : "http://localhost:4000/api/auth/login";
+
+      const redirectPath = userType === "customer" ? "/profile" : "/vendor/dashboard";
+
       try {
-        const response = await fetch('http://localhost:4000/api/auth/login', {
+        const response = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email: values.email,
-            password: values.password
-          }),
+          body: JSON.stringify(values),
         });
 
         const data = await response.json();
 
         if (!response.ok) {
-          throw new Error(data.message || 'خطا در ورود');
+          throw new Error(data.message || 'خطا در ورود. لطفاً دوباره تلاش کنید.');
         }
 
         // ذخیره توکن در حافظه مرورگر
-        localStorage.setItem('vendor_token', data.token);
+        const tokenKey = userType === "customer" ? "customer_token" : "vendor_token";
+        localStorage.setItem(tokenKey, data.token);
+        localStorage.setItem("user", JSON.stringify(data.user)); // ذخیره اطلاعات کاربر
 
-        // بستن دیالوگ در صورت وجود و هدایت به داشبورد
+        // بستن دیالوگ و هدایت کاربر
         closeDialog?.();
-        router.push('/vendor/dashboard');
+        router.push(redirectPath);
 
       } catch (error: any) {
         setApiError(error.message);
@@ -77,9 +95,26 @@ const LoginPageView = ({ closeDialog }: { closeDialog?: () => void }) => {
 
   return (
     <form onSubmit={handleSubmit}>
-      {/* نمایش خطای API */}
+      {/* --- انتخاب نوع کاربر --- */}
+      <Typography variant="body2" fontWeight={600} textAlign="center" mb={2}>
+        ورود به عنوان:
+      </Typography>
+      <ToggleButtonGroup
+        fullWidth
+        exclusive
+        color="primary"
+        value={userType}
+        onChange={handleUserTypeChange}
+        sx={{ mb: 2 }}
+      >
+        <ToggleButton value="customer">مشتری</ToggleButton>
+        <ToggleButton value="seller">فروشنده</ToggleButton>
+      </ToggleButtonGroup>
+
+      {/* --- نمایش خطای API --- */}
       {apiError && <Alert severity="error" sx={{ mb: 2 }}>{apiError}</Alert>}
 
+      {/* --- فیلدهای فرم --- */}
       <BazaarTextField
         mb={1.5}
         fullWidth
@@ -90,11 +125,11 @@ const LoginPageView = ({ closeDialog }: { closeDialog?: () => void }) => {
         onBlur={handleBlur}
         value={values.email}
         onChange={handleChange}
-        label="Email or Phone Number"
-        placeholder="exmple@mail.com"
+        label="ایمیل"
+        placeholder="example@mail.com"
         helperText={touched.email && errors.email}
         error={Boolean(touched.email && errors.email)}
-        disabled={isSubmitting} // ---> اضافه شد
+        disabled={isSubmitting}
       />
 
       <BazaarTextField
@@ -102,7 +137,7 @@ const LoginPageView = ({ closeDialog }: { closeDialog?: () => void }) => {
         fullWidth
         size="small"
         name="password"
-        label="Password"
+        label="رمز عبور"
         autoComplete="on"
         variant="outlined"
         onBlur={handleBlur}
@@ -112,7 +147,7 @@ const LoginPageView = ({ closeDialog }: { closeDialog?: () => void }) => {
         type={visiblePassword ? "text" : "password"}
         helperText={touched.password && errors.password}
         error={Boolean(touched.password && errors.password)}
-        disabled={isSubmitting} // ---> اضافه شد
+        disabled={isSubmitting}
         InputProps={{
           endAdornment: <EyeToggleButton show={visiblePassword} click={togglePasswordVisible} />
         }}
@@ -124,9 +159,9 @@ const LoginPageView = ({ closeDialog }: { closeDialog?: () => void }) => {
         color="primary"
         variant="contained"
         size="large"
-        disabled={isSubmitting} // دکمه در حین ارسال غیرفعال می‌شود
+        disabled={isSubmitting}
       >
-        Login
+        {isSubmitting ? "در حال ورود..." : "ورود"}
       </Button>
     </form>
   );
