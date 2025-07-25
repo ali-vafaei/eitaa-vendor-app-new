@@ -264,8 +264,10 @@ app.post('/api/products', async (req, res) => {
   }
   try {
     const result = await pool.query(
-      'INSERT INTO products (name, price, stock, thumbnail, brand, categories, slug, published) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
-      [name, price, stock, thumbnail, brand, categories, slug, true]
+        'INSERT INTO products (name, price, stock, thumbnail, brand, categories, slug, published) VALUES ($1, $2, $3, $4, $5, $6, $7, true) RETURNING *',
+        [name, Number(price), Number(stock), thumbnail, brand,
+         Array.isArray(categories) ? categories : [categories], // تبدیل به آرایه
+         slug]
     );
     const newProduct = { ...result.rows[0], title: result.rows[0].name };
     res.status(201).json(newProduct);
@@ -285,8 +287,10 @@ app.put('/api/products/:id', async (req, res) => {
 
   try {
     const result = await pool.query(
-      'UPDATE products SET name = $1, price = $2, stock = $3, thumbnail = $4, brand = $5, categories = $6, slug = $7, published = $8 WHERE id = $9 RETURNING *',
-      [name, price, stock, thumbnail, brand, categories, slug, published, id]
+        'UPDATE products SET name = $1, price = $2, stock = $3, thumbnail = $4, brand = $5, categories = $6, slug = $7, published = $8 WHERE id = $9 RETURNING *',
+        [name, Number(price), Number(stock), thumbnail, brand,
+         Array.isArray(categories) ? categories : [categories], // تبدیل به آرایه
+         slug, published, id]
     );
 
     if (result.rows.length === 0) {
@@ -564,7 +568,148 @@ app.post('/api/orders', async (req, res) => {
     client.release();
   }
 });
+// --- API های محصولات برای فرانت‌اند ---
 
+// دریافت همه محصولات با فیلتر
+app.get('/api/products', async (req, res) => {
+  try {
+    const { tag, category, search } = req.query;
+    let query = 'SELECT * FROM products WHERE published = true';
+    const params = [];
+
+    if (search) {
+      params.push(`%${search}%`);
+      query += ` AND name ILIKE $${params.length}`;
+    }
+
+    const result = await pool.query(query, params);
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'خطا در دریافت محصولات' });
+  }
+});
+
+// دریافت محصولات پرفروش (برای صفحه اصلی)
+app.get('/api/fashion-shop-2/products', async (req, res) => {
+  try {
+    const { tag } = req.query;
+    let query = 'SELECT * FROM products WHERE published = true';
+
+    // فعلاً همه محصولات را برمی‌گردانیم
+    // بعداً می‌توانیم فیلتر اضافه کنیم
+    if (tag === 'feature') {
+      query += ' LIMIT 8';
+    } else if (tag === 'sale') {
+      query += ' LIMIT 6';
+    } else if (tag === 'popular') {
+      query += ' LIMIT 6';
+    }
+
+    const result = await pool.query(query);
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'خطا در دریافت محصولات' });
+  }
+});
+
+// دریافت یک محصول با آی‌دی
+app.get('/api/products/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await pool.query(
+      'SELECT * FROM products WHERE id = $1 AND published = true',
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'محصول یافت نشد' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'خطا در دریافت محصول' });
+  }
+});
+
+// --- API های جدید برای فرانت‌اند ---
+
+// دریافت همه محصولات
+app.get('/api/products', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM products WHERE published = true');
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'خطا در دریافت محصولات' });
+  }
+});
+
+// API های fashion-shop-2
+app.get('/api/fashion-shop-2/products', async (req, res) => {
+  try {
+    const { tag } = req.query;
+    let query = 'SELECT * FROM products WHERE published = true';
+
+    if (tag === 'feature') {
+      query += ' LIMIT 8';
+    } else if (tag === 'sale') {
+      query += ' LIMIT 6';
+    } else if (tag === 'popular') {
+      query += ' LIMIT 6';
+    } else if (tag === 'latest') {
+      query += ' ORDER BY created_at DESC LIMIT 6';
+    } else if (tag === 'best-week') {
+      query += ' LIMIT 6';
+    }
+
+    const result = await pool.query(query);
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'خطا در دریافت محصولات' });
+  }
+});
+
+// دریافت محصول با slug یا id
+app.get('/api/products/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    // بررسی اینکه آیا id عدد است یا slug
+    const isNumber = !isNaN(id);
+    const query = isNumber
+      ? 'SELECT * FROM products WHERE id = $1 AND published = true'
+      : 'SELECT * FROM products WHERE slug = $1 AND published = true';
+
+    const result = await pool.query(query, [id]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'محصول یافت نشد' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'خطا در دریافت محصول' });
+  }
+});
+
+// جستجوی محصولات
+app.get('/api/products/search', async (req, res) => {
+  const { q } = req.query;
+  try {
+    const result = await pool.query(
+      'SELECT * FROM products WHERE published = true AND name ILIKE $1',
+      [`%${q}%`]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'خطا در جستجو' });
+  }
+});
 // --- شروع سرور ---
 app.listen(port, () => {
   console.log(`🚀 Server running on port ${port}`);
