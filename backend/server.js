@@ -325,43 +325,58 @@ app.get('/api/products/search/:query', async (req, res) => {
   }
 });
 
-// دریافت یک محصول بر اساس ID
-app.get('/api/products/:id', async (req, res) => {
-  const { id } = req.params;
-  try {
-    const result = await pool.query('SELECT * FROM products WHERE id = $1', [id]);
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'محصول پیدا نشد' });
-    }
-    const product = { ...result.rows[0], title: result.rows[0].name };
-    res.status(200).json(product);
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ message: 'خطا در دریافت محصول' });
-  }
-});
 
 // افزودن محصول جدید
+// --- افزودن محصول جدید (نسخه اصلاح شده و قوی‌تر) ---
+
 app.post('/api/products', async (req, res) => {
-  const { name, price, stock, thumbnail, brand, categories, slug } = req.body;
+  // 1. دریافت اطلاعات از بدنه درخواست
+  const { name, price, stock, thumbnail, brand, categories } = req.body;
+  let { slug } = req.body; // slug را قابل تغییر تعریف می‌کنیم
+
+  // 2. اعتبارسنجی فیلدهای ضروری
   if (!name || !price || stock === undefined) {
     return res.status(400).json({ message: 'نام، قیمت و موجودی الزامی هستند.' });
   }
+
+  // 3. ساختن slug در صورت عدم وجود
+  // اگر فرانت‌اند slug ارسال نکرده باشد، ما یک slug منحصر به فرد می‌سازیم
+  if (!slug) {
+    // این الگو دقیقا شبیه slugهایی است که در دیتابیس شما وجود دارد
+    const randomPart = Math.floor(Math.random() * 1000);
+    slug = `product-${Date.now()}-${randomPart}`;
+    console.log(`✅ Slug not provided. Generated new slug: ${slug}`);
+  }
+
   try {
+    // 4. درج محصول در دیتابیس
     const result = await pool.query(
         'INSERT INTO products (name, price, stock, thumbnail, brand, categories, slug, published) VALUES ($1, $2, $3, $4, $5, $6, $7, true) RETURNING *',
-        [name, Number(price), Number(stock), thumbnail, brand,
-         Array.isArray(categories) ? categories : [categories], // تبدیل به آرایه
-         slug]
+        [
+          name,
+          Number(price),
+          Number(stock),
+          thumbnail,
+          brand,
+          Array.isArray(categories) ? categories : [categories],
+          slug // استفاده از slug نهایی (ارسال شده یا ساخته شده)
+        ]
     );
+
+    // 5. ارسال پاسخ موفقیت‌آمیز
     const newProduct = { ...result.rows[0], title: result.rows[0].name };
     res.status(201).json(newProduct);
+
   } catch (err) {
-    console.error(err.message);
+    // 6. مدیریت خطاها با جزئیات بیشتر
+    console.error('❌ Error adding product:', err); // لاگ کردن کل خطا برای دیباگ بهتر
+
+    // اگر slug تکراری باشد (خطای unique constraint)
     if (err.code === '23505') {
-      return res.status(409).json({ message: 'محصولی با این slug قبلاً وجود دارد' });
+      return res.status(409).json({ message: `محصولی با این slug یا شناسه ('${slug}') قبلاً وجود دارد.` });
     }
-    res.status(500).json({ message: 'خطا در افزودن محصول' });
+
+    res.status(500).json({ message: 'خطا در افزودن محصول به دیتابیس' });
   }
 });
 
@@ -434,22 +449,33 @@ app.patch('/api/products/:id/restore', async (req, res) => {
   }
 });
 
-// تغییر وضعیت انتشار
-app.patch('/api/products/:id/toggle-publish', async (req, res) => {
-  const { id } = req.params;
-  try {
-    const result = await pool.query(
-      'UPDATE products SET published = NOT published WHERE id = $1 RETURNING *',
-      [id]
-    );
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'محصولی با این شناسه یافت نشد.' });
+// دریافت یک محصول بر اساس شناسه (ID عددی یا slug متنی)
+app.get('/api/products/:identifier', async (req, res) => {
+    const { identifier } = req.params;
+    try {
+        // تشخیص می‌دهیم که شناسه ورودی عدد است یا متن
+        const isNumber = !isNaN(parseInt(identifier));
+
+        // بر اساس نوع شناسه، کوئری مناسب را انتخاب می‌کنیم
+        const queryText = isNumber
+            ? 'SELECT * FROM products WHERE id = $1'
+            : 'SELECT * FROM products WHERE slug = $1';
+
+        const result = await pool.query(queryText, [identifier]);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ message: 'محصول یافت نشد' });
+        }
+
+        // محصول پیدا شد، آن را به همراه فیلد title برمی‌گردانیم
+        const product = { ...result.rows[0], title: result.rows[0].name };
+        res.status(200).json(product);
+
+    } catch (err) {
+        // در صورت بروز هرگونه خطای دیگر در دیتابیس
+        console.error(`[ERROR] fetching product with identifier ${identifier}:`, err.message);
+        res.status(500).json({ message: 'خطای سرور در دریافت محصول' });
     }
-    res.status(200).json(result.rows[0]);
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ message: 'خطا در تغییر وضعیت انتشار' });
-  }
 });
 
 // دریافت آمار محصولات
@@ -699,25 +725,7 @@ app.get('/api/fashion-shop-2/products', async (req, res) => {
   }
 });
 
-// دریافت یک محصول با آی‌دی
-app.get('/api/products/:id', async (req, res) => {
-  const { id } = req.params;
-  try {
-    const result = await pool.query(
-      'SELECT * FROM products WHERE id = $1 AND published = true',
-      [id]
-    );
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'محصول یافت نشد' });
-    }
-
-    res.json(result.rows[0]);
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ message: 'خطا در دریافت محصول' });
-  }
-});
 
 // --- API های جدید برای فرانت‌اند ---
 
@@ -758,28 +766,7 @@ app.get('/api/fashion-shop-2/products', async (req, res) => {
   }
 });
 
-// دریافت محصول با slug یا id
-app.get('/api/products/:id', async (req, res) => {
-  const { id } = req.params;
-  try {
-    // بررسی اینکه آیا id عدد است یا slug
-    const isNumber = !isNaN(id);
-    const query = isNumber
-      ? 'SELECT * FROM products WHERE id = $1 AND published = true'
-      : 'SELECT * FROM products WHERE slug = $1 AND published = true';
 
-    const result = await pool.query(query, [id]);
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'محصول یافت نشد' });
-    }
-
-    res.json(result.rows[0]);
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ message: 'خطا در دریافت محصول' });
-  }
-});
 
 // جستجوی محصولات
 app.get('/api/products/search', async (req, res) => {
