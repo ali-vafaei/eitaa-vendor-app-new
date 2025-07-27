@@ -29,20 +29,43 @@ type Props = { product: Product };
 // ================================================================
 
 export default function ProductIntro({ product }: Props) {
-  const { id, price, title, images, slug, thumbnail } = product || {};
+  // Destructure properties with fallbacks to prevent errors if product is null
+  const {
+    id,
+    price = 0,
+    title = "محصول بدون عنوان",
+    images,
+    slug,
+    thumbnail,
+    brand,
+    rating,
+  } = product || {};
 
   const { state, dispatch } = useCart();
   const [selectedImage, setSelectedImage] = useState(0);
   const [selectVariants, setSelectVariants] = useState({
     option: "option 1",
-    type: "type 1"
+    type: "type 1",
   });
+
+  // ✨✨✨ راه حل نهایی و ضدخطا اینجاست ✨✨✨
+  // 1. یک لیست عکس امن می‌سازیم که تضمین شده یک آرایه است.
+  const imageList =
+    (images && Array.isArray(images) && images.length > 0)
+      ? images
+      : thumbnail
+      ? [thumbnail]
+      : ["/assets/images/products/placeholder.png"]; // یک عکس جایگزین در صورت نبود هیچ عکسی
+
+  // 2. اطمینان حاصل می‌کنیم که ایندکس عکس انتخابی معتبر است.
+  const safeSelectedImage = Math.min(selectedImage, imageList.length - 1);
+  const selectedImageUrl = imageList[safeSelectedImage];
 
   // HANDLE CHANGE TYPE AND OPTIONS
   const handleChangeVariant = (variantName: string, value: string) => () => {
     setSelectVariants((state) => ({
       ...state,
-      [variantName.toLowerCase()]: value
+      [variantName.toLowerCase()]: value,
     }));
   };
 
@@ -56,7 +79,7 @@ export default function ProductIntro({ product }: Props) {
   const handleCartAmountChange = (amount: number) => () => {
     dispatch({
       type: "CHANGE_CART_AMOUNT",
-      payload: { price, qty: amount, name: title, imgUrl: thumbnail, id, slug }
+      payload: { price, qty: amount, name: title, imgUrl: thumbnail, id, slug },
     });
   };
 
@@ -71,13 +94,13 @@ export default function ProductIntro({ product }: Props) {
               width={300}
               height={300}
               loading="eager"
-              src={product.images[selectedImage]}
+              src={selectedImageUrl} // 3. از URL امن استفاده می‌کنیم
               sx={{ objectFit: "contain" }}
             />
           </FlexBox>
 
           <FlexBox overflow="auto">
-            {images.map((url, ind) => (
+            {imageList.map((url, ind) => ( // 4. از لیست عکس امن برای map استفاده می‌کنیم
               <FlexRowCenter
                 key={ind}
                 width={64}
@@ -89,7 +112,7 @@ export default function ProductIntro({ product }: Props) {
                 ml={ind === 0 ? "auto" : 0}
                 style={{ cursor: "pointer" }}
                 onClick={handleImageClick(ind)}
-                mr={ind === images.length - 1 ? "auto" : "10px"}
+                mr={ind === imageList.length - 1 ? "auto" : "10px"}
                 borderColor={selectedImage === ind ? "primary.main" : "grey.400"}>
                 <Avatar alt="product" src={url} variant="square" sx={{ height: 40 }} />
               </FlexRowCenter>
@@ -105,13 +128,13 @@ export default function ProductIntro({ product }: Props) {
           {/* PRODUCT BRAND */}
           <FlexBox alignItems="center" mb={1}>
             <div>Brand: </div>
-            <H6>Xiaomi</H6>
+            <H6>{brand || "N/A"}</H6>
           </FlexBox>
 
           {/* PRODUCT RATING */}
           <FlexBox alignItems="center" gap={1} mb={2}>
             <Box lineHeight="1">Rated:</Box>
-            <Rating color="warn" value={4} readOnly />
+            <Rating color="warn" value={rating || 0} readOnly />
             <H6 lineHeight="1">(50)</H6>
           </FlexBox>
 

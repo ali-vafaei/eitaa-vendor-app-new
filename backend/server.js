@@ -2,7 +2,8 @@ const express = require('express');
 const { Pool } = require('pg');
 const bcrypt = require('bcrypt');
 const cors = require('cors');
-
+const multer = require('multer'); // ✨ کتابخانه جدید برای آپلود فایل
+const path = require('path');   // ✨ کتابخانه داخلی نود برای کار با مسیرها
 const app = express();
 const port = 4000;
 const saltRounds = 10;
@@ -21,6 +22,25 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json());
+
+
+// ✨ بخش جدید: سرور کردن فایل‌های استاتیک از پوشه uploads
+// این کد به مرورگر اجازه می‌دهد عکس‌های آپلود شده را ببیند
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+
+// --- ✨ بخش جدید: تنظیمات Multer برای ذخیره فایل‌ها ---
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, 'uploads/'); // فایل‌ها در پوشه‌ای به نام 'uploads' ذخیره می‌شوند
+  },
+  filename: function (req, file, cb) {
+    // یک نام منحصر به فرد برای فایل ایجاد می‌کنیم تا جایگزین نشود
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+const upload = multer({ storage: storage });
 
 // لاگ درخواست‌ها
 app.use((req, res, next) => {
@@ -216,7 +236,7 @@ app.post('/api/auth/customer/login', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('[LOGIN ERROR] An unexpected error occurred:', error);
+    console.error('[LOGIN ERROR] An unexpzected error occurred:', error);
     res.status(500).json({ message: 'خطا در سرور هنگام ورود' });
   }
 });
@@ -325,88 +345,80 @@ app.get('/api/products/search/:query', async (req, res) => {
   }
 });
 
-
-// افزودن محصول جدید
-// --- افزودن محصول جدید (نسخه اصلاح شده و قوی‌تر) ---
-
+// --- افزودن محصول جدید (نسخه نهایی و کامل) ---
 app.post('/api/products', async (req, res) => {
-  // 1. دریافت اطلاعات از بدنه درخواست
-  const { name, price, stock, thumbnail, brand, categories } = req.body;
-  let { slug } = req.body; // slug را قابل تغییر تعریف می‌کنیم
+  // دریافت تمام فیلدهای ممکن از body
+  const { name, price, stock, images, thumbnail, brand, categories, slug, discount, rating, size, colors, status, published } = req.body;
 
-  // 2. اعتبارسنجی فیلدهای ضروری
-  if (!name || !price || stock === undefined) {
-    return res.status(400).json({ message: 'نام، قیمت و موجودی الزامی هستند.' });
-  }
-
-  // 3. ساختن slug در صورت عدم وجود
-  // اگر فرانت‌اند slug ارسال نکرده باشد، ما یک slug منحصر به فرد می‌سازیم
-  if (!slug) {
-    // این الگو دقیقا شبیه slugهایی است که در دیتابیس شما وجود دارد
-    const randomPart = Math.floor(Math.random() * 1000);
-    slug = `product-${Date.now()}-${randomPart}`;
-    console.log(`✅ Slug not provided. Generated new slug: ${slug}`);
+  if (!name || !price || stock === undefined || !images || !Array.isArray(images) || images.length === 0) {
+    return res.status(400).json({ message: 'نام، قیمت، موجودی و حداقل یک تصویر الزامی هستند.' });
   }
 
   try {
-    // 4. درج محصول در دیتابیس
     const result = await pool.query(
-        'INSERT INTO products (name, price, stock, thumbnail, brand, categories, slug, published) VALUES ($1, $2, $3, $4, $5, $6, $7, true) RETURNING *',
+        `INSERT INTO products (name, price, stock, slug, published, images, thumbnail, brand, categories, discount, rating, size, colors, status) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING *`,
         [
           name,
           Number(price),
           Number(stock),
-          thumbnail,
+          slug || `${name.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`,
+          published !== false,
+          images,
+          thumbnail || images[0], // اگر thumbnail نبود، اولین عکس گالری را به عنوان thumbnail در نظر بگیر
           brand,
-          Array.isArray(categories) ? categories : [categories],
-          slug // استفاده از slug نهایی (ارسال شده یا ساخته شده)
+          Array.isArray(categories) ? categories : [],
+          discount || 0,
+          rating || 0,
+          size || [],
+          colors || [],
+          status
         ]
     );
 
-    // 5. ارسال پاسخ موفقیت‌آمیز
     const newProduct = { ...result.rows[0], title: result.rows[0].name };
     res.status(201).json(newProduct);
 
   } catch (err) {
-    // 6. مدیریت خطاها با جزئیات بیشتر
-    console.error('❌ Error adding product:', err); // لاگ کردن کل خطا برای دیباگ بهتر
-
-    // اگر slug تکراری باشد (خطای unique constraint)
-    if (err.code === '23505') {
-      return res.status(409).json({ message: `محصولی با این slug یا شناسه ('${slug}') قبلاً وجود دارد.` });
-    }
-
+    console.error('❌ Error adding product:', err);
+    if (err.code === '23505') return res.status(409).json({ message: `محصولی با این slug قبلاً وجود دارد.` });
     res.status(500).json({ message: 'خطا در افزودن محصول به دیتابیس' });
   }
 });
 
-// به‌روزرسانی محصول
+
+// --- به‌روزرسانی محصول (نسخه نهایی و کامل) ---
 app.put('/api/products/:id', async (req, res) => {
   const { id } = req.params;
-  const { name, price, stock, thumbnail, brand, categories, slug, published } = req.body;
+  const { name, price, stock, images, thumbnail, brand, categories, slug, published, discount, rating, size, colors, status } = req.body;
 
   try {
     const result = await pool.query(
-        'UPDATE products SET name = $1, price = $2, stock = $3, thumbnail = $4, brand = $5, categories = $6, slug = $7, published = $8 WHERE id = $9 RETURNING *',
-        [name, Number(price), Number(stock), thumbnail, brand,
-         Array.isArray(categories) ? categories : [categories], // تبدیل به آرایه
-         slug, published, id]
+        `UPDATE products SET 
+          name = $1, price = $2, stock = $3, images = $4, brand = $5, categories = $6, 
+          slug = $7, published = $8, discount = $9, rating = $10, size = $11, colors = $12, 
+          thumbnail = $13, status = $14 
+         WHERE id = $15 RETURNING *`,
+        [
+          name, Number(price), Number(stock), images, brand,
+          Array.isArray(categories) ? categories : [],
+          slug, published, discount, rating, size, colors,
+          thumbnail || (images && images.length > 0 ? images[0] : null), // منطق مشابه برای thumbnail
+          status, id
+        ]
     );
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'محصول پیدا نشد' });
-    }
+    if (result.rows.length === 0) return res.status(404).json({ message: 'محصول پیدا نشد' });
 
     const updatedProduct = { ...result.rows[0], title: result.rows[0].name };
     res.status(200).json(updatedProduct);
   } catch (err) {
-    console.error(err.message);
-    if (err.code === '23505') {
-      return res.status(409).json({ message: 'محصولی با این slug قبلاً وجود دارد' });
-    }
+    console.error('❌ Error updating product:', err);
+    if (err.code === '23505') return res.status(409).json({ message: 'محصولی با این slug قبلاً وجود دارد' });
     res.status(500).json({ message: 'خطا در به‌روزرسانی محصول' });
   }
 });
+
 
 // حذف نرم محصول (بایگانی)
 app.delete('/api/products/:id', async (req, res) => {
@@ -679,27 +691,7 @@ app.post('/api/orders', async (req, res) => {
     client.release();
   }
 });
-// --- API های محصولات برای فرانت‌اند ---
 
-// دریافت همه محصولات با فیلتر
-app.get('/api/products', async (req, res) => {
-  try {
-    const { tag, category, search } = req.query;
-    let query = 'SELECT * FROM products WHERE published = true';
-    const params = [];
-
-    if (search) {
-      params.push(`%${search}%`);
-      query += ` AND name ILIKE $${params.length}`;
-    }
-
-    const result = await pool.query(query, params);
-    res.json(result.rows);
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ message: 'خطا در دریافت محصولات' });
-  }
-});
 
 // دریافت محصولات پرفروش (برای صفحه اصلی)
 app.get('/api/fashion-shop-2/products', async (req, res) => {
@@ -726,19 +718,6 @@ app.get('/api/fashion-shop-2/products', async (req, res) => {
 });
 
 
-
-// --- API های جدید برای فرانت‌اند ---
-
-// دریافت همه محصولات
-app.get('/api/products', async (req, res) => {
-  try {
-    const result = await pool.query('SELECT * FROM products WHERE published = true');
-    res.json(result.rows);
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ message: 'خطا در دریافت محصولات' });
-  }
-});
 
 // API های fashion-shop-2
 app.get('/api/fashion-shop-2/products', async (req, res) => {
@@ -1008,49 +987,6 @@ app.get('/api/address/user', async (req, res) => {
   }
 });
 
-// مسیر ثبت نام مشتری
-app.post('/api/auth/register/customer', async (req, res) => {
-  const { email, password, first_name } = req.body;
-  if (!email || !password || !first_name) {
-    return res.status(400).json({ message: 'ایمیل، رمز عبور و نام الزامی هستند.' });
-  }
-  try {
-    const password_hash = await bcrypt.hash(password, saltRounds);
-    const newCustomer = await pool.query(
-      'INSERT INTO customers (email, password_hash, first_name) VALUES ($1, $2, $3) RETURNING id, email, first_name',
-      [email.toLowerCase(), password_hash, first_name]
-    );
-    res.status(201).json(newCustomer.rows[0]);
-  } catch (error) {
-    if (error.code === '23505') {
-      return res.status(409).json({ message: 'این ایمیل قبلاً ثبت شده است.' });
-    }
-    console.error('Register Customer Error:', error.message);
-    res.status(500).json({ message: 'خطا در فرآیند ثبت‌نام مشتری' });
-  }
-});
-
-// مسیر ثبت نام فروشنده
-app.post('/api/auth/register/seller', async (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password) {
-    return res.status(400).json({ message: 'ایمیل و رمز عبور الزامی هستند.' });
-  }
-  try {
-    const password_hash = await bcrypt.hash(password, saltRounds);
-    const newSeller = await pool.query(
-      'INSERT INTO sellers (email, password_hash) VALUES ($1, $2) RETURNING id, email',
-      [email.toLowerCase(), password_hash]
-    );
-    res.status(201).json(newSeller.rows[0]);
-  } catch (error) {
-    if (error.code === '23505') {
-      return res.status(409).json({ message: 'این ایمیل قبلاً ثبت شده است.' });
-    }
-    console.error('Register Seller Error:', error.message);
-    res.status(500).json({ message: 'خطا در فرآیند ثبت‌نام فروشنده' });
-  }
-});
 // --- شروع سرور ---
 app.listen(port, () => {
   console.log(`🚀 Server running on port ${port}`);

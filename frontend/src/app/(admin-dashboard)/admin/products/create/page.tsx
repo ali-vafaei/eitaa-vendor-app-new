@@ -3,31 +3,64 @@
 import { useRouter } from "next/navigation";
 import { useSnackbar } from "notistack";
 import { ProductCreatePageView } from "pages-sections/vendor-dashboard/products/page-view";
+import { useState } from "react"; // ✨ ایمپورت لازم برای مدیریت وضعیت آپلود
 
 const ProductCreate = () => {
   const router = useRouter();
   const { enqueueSnackbar } = useSnackbar();
+  const [isSubmitting, setIsSubmitting] = useState(false); // ✨ state برای غیرفعال کردن دکمه حین آپلود
 
-  // تابع ذخیره محصول با کد کامل و درست
+  // تابع ذخیره محصول با قابلیت آپلود واقعی فایل
   const handleSaveProduct = async (values: any) => {
-    console.log('💾 Saving product with values:', values);
+    console.log('💾 Starting product save process with values:', values);
+    setIsSubmitting(true);
 
     try {
-      // ✅ آماده‌سازی داده‌ها با validation کامل
+      let imageUrl = values.thumbnail; // آدرس URL وارد شده توسط کاربر در فیلد Image URL
+
+      // ✨ مرحله ۱: اگر فایلی از فرم ارسال شده بود، آن را آپلود کن
+      // حالا ما می‌دانیم که فایل‌ها در 'values.files' قرار دارند
+      if (values.files && values.files.length > 0) {
+        const fileToUpload = values.files[0]; // فعلا فقط اولین فایل را آپلود می‌کنیم
+        console.log('🚀 Uploading new image file:', fileToUpload.name);
+
+        const formData = new FormData();
+        formData.append('image', fileToUpload);
+
+        const uploadResponse = await fetch('http://localhost:4000/api/upload', {
+          method: 'POST',
+          body: formData,
+        });
+
+        const uploadResult = await uploadResponse.json();
+        if (!uploadResponse.ok) {
+          throw new Error(uploadResult.message || 'خطا در آپلود عکس');
+        }
+
+        imageUrl = uploadResult.url; // از آدرس عکس آپلود شده استفاده کن
+        console.log('✅ Image uploaded successfully:', imageUrl);
+      }
+
+      // اگر هیچ عکسی (نه URL و نه فایل) وجود نداشت، خطا بده
+      if (!imageUrl) {
+        throw new Error('لطفاً یک عکس برای محصول انتخاب یا آدرس آن را وارد کنید.');
+      }
+
+      // ✨ مرحله ۲: حالا اطلاعات کامل محصول را با آدرس عکس صحیح به سرور بفرست
       const productData = {
         name: values.name || values.title || '',
         price: Number(values.price) || 0,
         stock: Number(values.stock) || 0,
-        thumbnail: values.thumbnail || values.image || "https://via.placeholder.com/300.png?text=" + encodeURIComponent(values.name || 'Product'),
         brand: values.brand || '',
-        // 🔥 تبدیل category به array برای سازگاری با بک‌اند
         categories: Array.isArray(values.category) ? values.category : (values.category ? [values.category] : []),
-        slug: values.slug || generateUniqueSlug(values.name || values.title || 'product')
+        slug: values.slug || generateUniqueSlug(values.name || values.title || 'product'),
+        thumbnail: imageUrl,
+        images: [imageUrl], // گالری عکس را با همان عکس اصلی پر می‌کنیم
       };
 
-      console.log('📤 Sending to server:', productData);
+      console.log('📤 Sending product data to server:', productData);
 
-      // ✅ validation قبل از ارسال
+      // ✅ validation شما دست‌نخورده باقی مانده است
       if (!productData.name.trim()) {
         throw new Error('نام محصول الزامی است');
       }
@@ -46,63 +79,43 @@ const ProductCreate = () => {
         body: JSON.stringify(productData),
       });
 
-      console.log('📡 Response status:', response.status);
-
       const result = await response.json();
-      console.log('📦 Server response:', result);
-
       if (!response.ok) {
         throw new Error(result.message || `خطای سرور: ${response.status}`);
       }
 
       enqueueSnackbar("محصول جدید با موفقیت اضافه شد!", { variant: "success" });
-
-      // ✅ کمی تأخیر برای نمایش پیام موفقیت
       setTimeout(() => {
         router.push("/admin/products");
       }, 1000);
 
     } catch (error: any) {
       console.error("❌ خطا در ایجاد محصول:", error);
-
-      // ✅ نمایش خطای دقیق‌تر
-      let errorMessage = "خطا در ایجاد محصول";
-
-      if (error.message.includes('fetch')) {
-        errorMessage = "خطا در ارتباط با سرور - لطفاً اتصال اینترنت را بررسی کنید";
-      } else if (error.message.includes('slug')) {
-        errorMessage = "نام محصول تکراری است - لطفاً نام دیگری انتخاب کنید";
-      } else {
-        errorMessage = error.message || "خطای نامشخص";
-      }
-
-      enqueueSnackbar(errorMessage, { variant: "error" });
+      enqueueSnackbar(error.message || "خطای نامشخص", { variant: "error" });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  // ✅ تابع کمکی برای ایجاد slug یکتا
+  // ✅ تابع کمکی شما برای ایجاد slug دست‌نخورده باقی مانده است
   const generateUniqueSlug = (name: string): string => {
     if (!name || name.trim() === '') {
       return `product-${Date.now()}`;
     }
-
     const baseSlug = name
       .toLowerCase()
       .trim()
-      .replace(/[^a-z0-9\s-]/g, '') // حذف کاراکترهای خاص
-      .replace(/\s+/g, '-') // جایگزینی فاصله با -
-      .replace(/-+/g, '-') // حذف - های متوالی
-      .replace(/^-|-$/g, ''); // حذف - از ابتدا و انتها
-
+      .replace(/[^a-z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '');
     const timestamp = Date.now();
     const randomNum = Math.floor(Math.random() * 1000);
-
     return `${baseSlug || 'product'}-${timestamp}-${randomNum}`;
   };
 
-  // ✅ تابع لغو
+  // ✅ تابع لغو شما دست‌نخورده باقی مانده است
   const handleCancel = () => {
-    // ✅ تأیید لغو اگر اطلاعاتی وارد شده
     const shouldCancel = window.confirm('آیا مطمئن هستید؟ تغییرات ذخیره نشده از بین می‌رود.');
     if (shouldCancel) {
       router.push("/admin/products");
@@ -113,6 +126,7 @@ const ProductCreate = () => {
     <ProductCreatePageView
       onSave={handleSaveProduct}
       onCancel={handleCancel}
+      isSubmitting={isSubmitting} // ✨ ارسال وضعیت آپلود به کامپوننت ویو
     />
   );
 };

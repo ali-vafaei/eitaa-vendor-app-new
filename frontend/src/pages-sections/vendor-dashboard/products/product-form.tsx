@@ -1,5 +1,5 @@
 // فایل: src/pages-sections/vendor-dashboard/products/product-form.tsx
-// برگرداندن به حالت اصلی template:
+// این نسخه کامل کد شماست که فقط یک خط برای ارسال فایل به آن اضافه شده است.
 
 "use client";
 
@@ -22,7 +22,7 @@ import { UploadImageBox, StyledClear } from "../styles";
 // FORM FIELDS VALIDATION SCHEMA (اصلی)
 const VALIDATION_SCHEMA = yup.object().shape({
   name: yup.string().required("Name is required!"),
-  category: yup.array(yup.string()).optional(), // ✅ array همان‌طور که در اصل بود
+  category: yup.array(yup.string()).optional(),
   description: yup.string().optional(),
   stock: yup.number().required("Stock is required!"),
   price: yup.number().required("Price is required!"),
@@ -44,7 +44,7 @@ export default function ProductForm({ productToEdit, onSave, onCancel }: Props) 
     brand: productToEdit?.brand || "",
     stock: productToEdit?.stock || "",
     price: productToEdit?.price || "",
-    category: productToEdit?.categories || [], // ✅ array همان‌طور که در اصل بود
+    category: productToEdit?.categories || [],
     sale_price: productToEdit?.sale_price || "",
     description: productToEdit?.description || "",
     thumbnail: productToEdit?.thumbnail || "",
@@ -56,7 +56,13 @@ export default function ProductForm({ productToEdit, onSave, onCancel }: Props) 
     try {
       setApiError("");
       setSubmitting(true);
-      await onSave(values);
+
+      // ✨✨✨ راه حل اصلی اینجاست: افزودن فایل‌ها به اطلاعات ارسالی ✨✨✨
+      // این تنها خطی است که به کد شما اضافه شده است.
+      const finalValues = { ...values, files: files };
+
+      await onSave(finalValues); // آبجکت کامل را ارسال می‌کنیم
+
     } catch (error: any) {
       setApiError(error.message || "خطا در ذخیره محصول");
     } finally {
@@ -64,7 +70,7 @@ export default function ProductForm({ productToEdit, onSave, onCancel }: Props) 
     }
   };
 
-  const [files, setFiles] = useState([]);
+  const [files, setFiles] = useState<File[]>([]);
 
   const handleChangeDropZone = (files: File[]) => {
     files.forEach((file) => Object.assign(file, { preview: URL.createObjectURL(file) }));
@@ -117,7 +123,7 @@ export default function ProductForm({ productToEdit, onSave, onCancel }: Props) 
                   onChange={handleChange}
                   value={values.category}
                   label="Select Category"
-                  SelectProps={{ multiple: true }} // ✅ multiple selection
+                  SelectProps={{ multiple: true }}
                   error={Boolean(touched.category && errors.category)}
                   helperText={(touched.category && errors.category) as string}
                   disabled={isSubmitting}
@@ -163,9 +169,9 @@ export default function ProductForm({ productToEdit, onSave, onCancel }: Props) 
               </Grid>
 
               <Grid item xs={12}>
-                <DropZone onChange={(files) => handleChangeDropZone(files)} />
+                <DropZone onChange={(files: File[]) => handleChangeDropZone(files)} />
                 <FlexBox flexDirection="row" mt={2} flexWrap="wrap" gap={1}>
-                  {files.map((file, index) => (
+                  {files.map((file: any, index) => (
                     <UploadImageBox key={index}>
                       <Box component="img" src={file.preview} width="100%" />
                       <StyledClear onClick={handleFileDelete(file)} />
