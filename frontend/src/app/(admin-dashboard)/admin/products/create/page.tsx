@@ -12,6 +12,12 @@ const ProductCreate = () => {
 
   // تابع ذخیره محصول با قابلیت آپلود واقعی فایل
   const handleSaveProduct = async (values: any) => {
+    // ✨ جلوگیری از double submit
+    if (isSubmitting) {
+      console.log('🛑 Already submitting, ignoring duplicate call...');
+      return;
+    }
+
     console.log('💾 Starting product save process with values:', values);
     setIsSubmitting(true);
 
@@ -34,10 +40,10 @@ const ProductCreate = () => {
 
         const uploadResult = await uploadResponse.json();
         if (!uploadResponse.ok) {
-          throw new Error(uploadResult.message || 'خطا در آپلود عکس');
+          throw new Error(uploadResult.error || uploadResult.message || 'خطا در آپلود عکس');
         }
 
-        imageUrl = uploadResult.url; // از آدرس عکس آپلود شده استفاده کن
+        imageUrl = uploadResult.imageUrl; // ✨ تصحیح: از imageUrl استفاده کنیم بجای url
         console.log('✅ Image uploaded successfully:', imageUrl);
       }
 
@@ -56,6 +62,9 @@ const ProductCreate = () => {
         slug: values.slug || generateUniqueSlug(values.name || values.title || 'product'),
         thumbnail: imageUrl,
         images: [imageUrl], // گالری عکس را با همان عکس اصلی پر می‌کنیم
+        description: values.description || '', // ✨ اضافه کردن description
+        sale_price: values.sale_price || 0, // ✨ اضافه کردن sale_price
+        published: values.published !== false, // ✨ اضافه کردن published
       };
 
       console.log('📤 Sending product data to server:', productData);
@@ -84,16 +93,19 @@ const ProductCreate = () => {
         throw new Error(result.message || `خطای سرور: ${response.status}`);
       }
 
+      console.log('✅ Product created successfully:', result);
       enqueueSnackbar("محصول جدید با موفقیت اضافه شد!", { variant: "success" });
+
+      // کمی تاخیر برای نمایش پیام موفقیت
       setTimeout(() => {
+        setIsSubmitting(false); // آزاد کردن state قبل از navigate
         router.push("/admin/products");
-      }, 1000);
+      }, 1500);
 
     } catch (error: any) {
       console.error("❌ خطا در ایجاد محصول:", error);
       enqueueSnackbar(error.message || "خطای نامشخص", { variant: "error" });
-    } finally {
-      setIsSubmitting(false);
+      setIsSubmitting(false); // آزاد کردن state در صورت خطا
     }
   };
 
@@ -116,6 +128,11 @@ const ProductCreate = () => {
 
   // ✅ تابع لغو شما دست‌نخورده باقی مانده است
   const handleCancel = () => {
+    if (isSubmitting) {
+      enqueueSnackbar("لطفاً تا پایان فرآیند آپلود صبر کنید...", { variant: "warning" });
+      return;
+    }
+
     const shouldCancel = window.confirm('آیا مطمئن هستید؟ تغییرات ذخیره نشده از بین می‌رود.');
     if (shouldCancel) {
       router.push("/admin/products");

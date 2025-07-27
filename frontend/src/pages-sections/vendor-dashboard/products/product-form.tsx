@@ -1,9 +1,6 @@
-// فایل: src/pages-sections/vendor-dashboard/products/product-form.tsx
-// این نسخه کامل کد شماست که فقط یک خط برای ارسال فایل به آن اضافه شده است.
-
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Box from "@mui/material/Box";
 import Card from "@mui/material/Card";
 import Grid from "@mui/material/Grid";
@@ -12,14 +9,14 @@ import MenuItem from "@mui/material/MenuItem";
 import TextField from "@mui/material/TextField";
 import { Formik } from "formik";
 import * as yup from "yup";
-import { Alert } from "@mui/material";
+import Alert from "@mui/material/Alert";
 // GLOBAL CUSTOM COMPONENTS
 import DropZone from "components/DropZone";
 import { FlexBox } from "components/flex-box";
 // STYLED COMPONENTS
 import { UploadImageBox, StyledClear } from "../styles";
 
-// FORM FIELDS VALIDATION SCHEMA (اصلی)
+// FORM FIELDS VALIDATION SCHEMA
 const VALIDATION_SCHEMA = yup.object().shape({
   name: yup.string().required("Name is required!"),
   category: yup.array(yup.string()).optional(),
@@ -30,14 +27,20 @@ const VALIDATION_SCHEMA = yup.object().shape({
   brand: yup.string().optional(),
 });
 
+// ================================================================
 interface Props {
   productToEdit?: any;
-  onSave: (product: any) => void | Promise<void>;
-  onCancel?: () => void;
+  onSave: (product: any) => void;
+  onCancel: () => void;
+  isSubmitting?: boolean;
 }
+// ================================================================
 
-export default function ProductForm({ productToEdit, onSave, onCancel }: Props) {
+export default function ProductForm({ productToEdit, onSave, onCancel, isSubmitting: externalSubmitting }: Props) {
   const [apiError, setApiError] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
+  const [existingImages, setExistingImages] = useState<string[]>([]); // ✨ عکس‌های موجود
+  const [isSubmittingForm, setIsSubmittingForm] = useState(false);
 
   const INITIAL_VALUES = {
     name: productToEdit?.name || "",
@@ -52,33 +55,159 @@ export default function ProductForm({ productToEdit, onSave, onCancel }: Props) 
     published: productToEdit?.published ?? true,
   };
 
+  // ✨ بارگذاری عکس‌های موجود هنگام ویرایش
+  useEffect(() => {
+    if (productToEdit && productToEdit.images) {
+      const images = Array.isArray(productToEdit.images)
+        ? productToEdit.images
+        : [productToEdit.images];
+
+      setExistingImages(images.filter(img => img && img.trim() !== ''));
+      console.log('📸 Loaded existing images:', images);
+    }
+  }, [productToEdit]);
+
+  // تابع اصلی ارسال فرم که فایل‌ها را هم مدیریت می‌کند
   const handleFormSubmit = async (values: any, { setSubmitting }: any) => {
+    if (isSubmittingForm) {
+      console.log('🛑 Form already submitting, ignoring...');
+      return;
+    }
+
+    console.log('🚀 Form submit started...');
+    setIsSubmittingForm(true);
+    setApiError("");
+    setSubmitting(true);
+    const isEditing = !!productToEdit;
+
     try {
-      setApiError("");
-      setSubmitting(true);
+      let uploadedImageUrls: string[] = [];
 
-      // ✨✨✨ راه حل اصلی اینجاست: افزودن فایل‌ها به اطلاعات ارسالی ✨✨✨
-      // این تنها خطی است که به کد شما اضافه شده است.
-      const finalValues = { ...values, files: files };
+      // ✨ مرحله ۱: آپلود فایل‌های جدید
+      if (files && files.length > 0) {
+        console.log(`🚀 Uploading ${files.length} new files...`);
 
-      await onSave(finalValues); // آبجکت کامل را ارسال می‌کنیم
+        for (const file of files) {
+          console.log('📤 Uploading:', file.name);
+
+          const formData = new FormData();
+          formData.append('image', file);
+
+          const uploadResponse = await fetch('http://localhost:4000/api/upload', {
+            method: 'POST',
+            body: formData,
+          });
+
+          const uploadResult = await uploadResponse.json();
+          if (!uploadResponse.ok) {
+            throw new Error(uploadResult.error || `خطا در آپلود ${file.name}`);
+          }
+
+          uploadedImageUrls.push(uploadResult.imageUrl);
+          console.log('✅ Uploaded:', uploadResult.imageUrl);
+        }
+      }
+
+      // ✨ مرحله ۲: ترکیب عکس‌های موجود با جدید
+      const allImages = [...existingImages, ...uploadedImageUrls];
+      console.log('🖼️ All images:', allImages);
+
+      // اطمینان از وجود حداقل یک عکس
+      if (allImages.length === 0) {
+        throw new Error('لطفاً حداقل یک عکس برای محصول انتخاب کنید.');
+      }
+
+      // مرحله ۳: آماده‌سازی داده‌ها برای ارسال به بک‌اند
+      const productData = {
+        name: values.name,
+        price: Number(values.price),
+        stock: Number(values.stock),
+        brand: values.brand,
+        categories: values.category,
+        slug: values.slug || values.name.toLowerCase().replace(/\s+/g, '-'),
+        thumbnail: allImages[0], // اولین عکس به عنوان thumbnail
+        images: allImages, // تمام عکس‌ها
+        published: values.published,
+        description: values.description,
+      };
+
+      console.log('📤 Sending product data:', productData);
+
+      const apiUrl = isEditing
+        ? `http://localhost:4000/api/products/${productToEdit.id}`
+        : 'http://localhost:4000/api/products';
+
+      const method = isEditing ? 'PUT' : 'POST';
+
+      const response = await fetch(apiUrl, {
+        method: method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(productData),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'خطا در ذخیره محصول');
+      }
+
+      console.log('✅ Product saved successfully:', data);
+
+      // فراخوانی callback تعریف شده در page.tsx
+      const valuesWithFiles = { ...values, files, existingImages, allImages };
+      onSave(valuesWithFiles);
 
     } catch (error: any) {
-      setApiError(error.message || "خطا در ذخیره محصول");
+      console.error('❌ Error in form submit:', error);
+      setApiError(error.message);
     } finally {
       setSubmitting(false);
+      setIsSubmittingForm(false);
     }
   };
 
-  const [files, setFiles] = useState<File[]>([]);
+  // ✨ مدیریت آپلود فایل‌های جدید (اضافه شدن، نه جایگزین شدن)
+  const handleChangeDropZone = (newFiles: File[]) => {
+    console.log('📁 Files selected:', newFiles.map(f => f.name));
 
-  const handleChangeDropZone = (files: File[]) => {
-    files.forEach((file) => Object.assign(file, { preview: URL.createObjectURL(file) }));
-    setFiles(files);
+    // اضافه کردن فایل‌های جدید به لیست موجود
+    const updatedFiles = [...files];
+
+    newFiles.forEach((file) => {
+      // چک کنیم که فایل تکراری نباشد
+      const isDuplicate = updatedFiles.some(existingFile =>
+        existingFile.name === file.name && existingFile.size === file.size
+      );
+
+      if (!isDuplicate) {
+        Object.assign(file, { preview: URL.createObjectURL(file) });
+        updatedFiles.push(file);
+      }
+    });
+
+    setFiles(updatedFiles);
+    console.log('📁 Total files now:', updatedFiles.length);
   };
 
+  // ✨ حذف فایل جدید انتخاب شده
   const handleFileDelete = (file: File) => () => {
-    setFiles((files) => files.filter((item) => item.name !== file.name));
+    console.log('🗑️ Deleting new file:', file.name);
+    setFiles((currentFiles) => currentFiles.filter((item) => item.name !== file.name));
+  };
+
+  // ✨ حذف عکس موجود
+  const handleExistingImageDelete = (imageUrl: string) => () => {
+    console.log('🗑️ Deleting existing image:', imageUrl);
+    setExistingImages((currentImages) => currentImages.filter((url) => url !== imageUrl));
+  };
+
+  // ✨ تابع کمکی برای نمایش آدرس کامل عکس
+  const getFullImageUrl = (imageUrl: string) => {
+    if (!imageUrl) return '';
+    if (imageUrl.startsWith('http')) return imageUrl;
+    if (imageUrl.startsWith('/uploads')) {
+      return `http://localhost:4000${imageUrl}`;
+    }
+    return imageUrl;
   };
 
   return (
@@ -91,6 +220,7 @@ export default function ProductForm({ productToEdit, onSave, onCancel }: Props) 
       >
         {({ values, errors, touched, handleChange, handleBlur, handleSubmit, isSubmitting }) => (
           <form onSubmit={handleSubmit}>
+            {/* نمایش خطای API */}
             {apiError && <Alert severity="error" sx={{ mb: 2 }}>{apiError}</Alert>}
 
             <Grid container spacing={3}>
@@ -107,7 +237,7 @@ export default function ProductForm({ productToEdit, onSave, onCancel }: Props) 
                   onChange={handleChange}
                   helperText={touched.name && errors.name}
                   error={Boolean(touched.name && errors.name)}
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || externalSubmitting}
                 />
               </Grid>
 
@@ -126,14 +256,112 @@ export default function ProductForm({ productToEdit, onSave, onCancel }: Props) 
                   SelectProps={{ multiple: true }}
                   error={Boolean(touched.category && errors.category)}
                   helperText={(touched.category && errors.category) as string}
-                  disabled={isSubmitting}
-                >
+                  disabled={isSubmitting || externalSubmitting}>
                   <MenuItem value="electronics">Electronics</MenuItem>
                   <MenuItem value="fashion">Fashion</MenuItem>
-                  <MenuItem value="books">Books</MenuItem>
-                  <MenuItem value="home">Home & Kitchen</MenuItem>
+                  <MenuItem value="beauty">Beauty</MenuItem>
                   <MenuItem value="sports">Sports</MenuItem>
+                  <MenuItem value="books">Books</MenuItem>
                 </TextField>
+              </Grid>
+
+              <Grid item xs={12}>
+                <DropZone
+                  title="Drop & drag product images here (Multiple files allowed)"
+                  onChange={handleChangeDropZone}
+                />
+
+                {/* ✨ نمایش عکس‌های موجود */}
+                {existingImages.length > 0 && (
+                  <Box mt={2}>
+                    <Box mb={1} fontSize="0.875rem" color="text.secondary">
+                      عکس‌های موجود:
+                    </Box>
+                    <FlexBox flexDirection="row" flexWrap="wrap" gap={1}>
+                      {existingImages.map((imageUrl, index) => (
+                        <UploadImageBox key={`existing-${index}`}>
+                          <Box
+                            component="img"
+                            src={getFullImageUrl(imageUrl)}
+                            width="100%"
+                            alt="existing"
+                          />
+                          <StyledClear onClick={handleExistingImageDelete(imageUrl)} />
+                        </UploadImageBox>
+                      ))}
+                    </FlexBox>
+                  </Box>
+                )}
+
+                {/* ✨ نمایش فایل‌های جدید انتخاب شده */}
+                {files.length > 0 && (
+                  <Box mt={2}>
+                    <Box mb={1} fontSize="0.875rem" color="text.secondary">
+                      فایل‌های جدید انتخاب شده:
+                    </Box>
+                    <FlexBox flexDirection="row" flexWrap="wrap" gap={1}>
+                      {files.map((file, index) => (
+                        <UploadImageBox key={`new-${index}`}>
+                          <Box component="img" src={file.preview} width="100%" alt="preview" />
+                          <StyledClear onClick={handleFileDelete(file)} />
+                        </UploadImageBox>
+                      ))}
+                    </FlexBox>
+                  </Box>
+                )}
+              </Grid>
+
+              <Grid item xs={12}>
+                <TextField
+                  rows={6}
+                  multiline
+                  fullWidth
+                  color="info"
+                  size="medium"
+                  name="description"
+                  label="Description"
+                  onBlur={handleBlur}
+                  onChange={handleChange}
+                  placeholder="Description"
+                  value={values.description}
+                  helperText={touched.description && errors.description}
+                  error={Boolean(touched.description && errors.description)}
+                  disabled={isSubmitting || externalSubmitting}
+                />
+              </Grid>
+
+              <Grid item sm={6} xs={12}>
+                <TextField
+                  fullWidth
+                  name="stock"
+                  color="info"
+                  size="medium"
+                  label="Stock"
+                  placeholder="Stock"
+                  onBlur={handleBlur}
+                  value={values.stock}
+                  onChange={handleChange}
+                  helperText={touched.stock && errors.stock}
+                  error={Boolean(touched.stock && errors.stock)}
+                  disabled={isSubmitting || externalSubmitting}
+                />
+              </Grid>
+
+              <Grid item sm={6} xs={12}>
+                <TextField
+                  fullWidth
+                  name="price"
+                  color="info"
+                  size="medium"
+                  label="Price"
+                  placeholder="Price"
+                  onBlur={handleBlur}
+                  value={values.price}
+                  onChange={handleChange}
+                  helperText={touched.price && errors.price}
+                  error={Boolean(touched.price && errors.price)}
+                  disabled={isSubmitting || externalSubmitting}
+                />
               </Grid>
 
               <Grid item sm={6} xs={12}>
@@ -149,132 +377,47 @@ export default function ProductForm({ productToEdit, onSave, onCancel }: Props) 
                   onChange={handleChange}
                   helperText={touched.brand && errors.brand}
                   error={Boolean(touched.brand && errors.brand)}
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || externalSubmitting}
                 />
               </Grid>
 
               <Grid item sm={6} xs={12}>
                 <TextField
                   fullWidth
-                  name="thumbnail"
-                  label="Image URL"
-                  color="info"
-                  size="medium"
-                  placeholder="https://example.com/image.jpg"
-                  value={values.thumbnail}
-                  onBlur={handleBlur}
-                  onChange={handleChange}
-                  disabled={isSubmitting}
-                />
-              </Grid>
-
-              <Grid item xs={12}>
-                <DropZone onChange={(files: File[]) => handleChangeDropZone(files)} />
-                <FlexBox flexDirection="row" mt={2} flexWrap="wrap" gap={1}>
-                  {files.map((file: any, index) => (
-                    <UploadImageBox key={index}>
-                      <Box component="img" src={file.preview} width="100%" />
-                      <StyledClear onClick={handleFileDelete(file)} />
-                    </UploadImageBox>
-                  ))}
-                </FlexBox>
-              </Grid>
-
-              <Grid item xs={12}>
-                <TextField
-                  rows={4}
-                  multiline
-                  fullWidth
-                  color="info"
-                  size="medium"
-                  name="description"
-                  label="Description"
-                  onBlur={handleBlur}
-                  onChange={handleChange}
-                  placeholder="Description"
-                  value={values.description}
-                  helperText={touched.description && errors.description}
-                  error={Boolean(touched.description && errors.description)}
-                  disabled={isSubmitting}
-                />
-              </Grid>
-
-              <Grid item sm={6} xs={12}>
-                <TextField
-                  fullWidth
-                  name="price"
-                  color="info"
-                  size="medium"
-                  type="number"
-                  onBlur={handleBlur}
-                  value={values.price}
-                  label="Regular Price"
-                  onChange={handleChange}
-                  placeholder="Regular Price"
-                  helperText={touched.price && errors.price}
-                  error={Boolean(touched.price && errors.price)}
-                  disabled={isSubmitting}
-                />
-              </Grid>
-
-              <Grid item sm={6} xs={12}>
-                <TextField
-                  fullWidth
-                  name="stock"
-                  color="info"
-                  size="medium"
-                  type="number"
-                  label="Stock"
-                  placeholder="Stock"
-                  onBlur={handleBlur}
-                  value={values.stock}
-                  onChange={handleChange}
-                  helperText={touched.stock && errors.stock}
-                  error={Boolean(touched.stock && errors.stock)}
-                  disabled={isSubmitting}
-                />
-              </Grid>
-
-              <Grid item sm={6} xs={12}>
-                <TextField
-                  fullWidth
-                  color="info"
-                  size="medium"
-                  type="number"
                   name="sale_price"
+                  color="info"
+                  size="medium"
                   label="Sale Price"
-                  onBlur={handleBlur}
-                  onChange={handleChange}
                   placeholder="Sale Price"
+                  onBlur={handleBlur}
                   value={values.sale_price}
+                  onChange={handleChange}
                   helperText={touched.sale_price && errors.sale_price}
                   error={Boolean(touched.sale_price && errors.sale_price)}
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || externalSubmitting}
                 />
               </Grid>
 
               <Grid item xs={12}>
-                <Box display="flex" gap={2}>
+                <FlexBox gap={2}>
                   <Button
                     variant="contained"
                     color="info"
                     type="submit"
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || externalSubmitting}
                   >
-                    {isSubmitting ? "Saving..." : "Save product"}
+                    {isSubmitting || externalSubmitting ? 'Saving...' : 'Save product'}
                   </Button>
 
-                  {onCancel && (
-                    <Button
-                      variant="outlined"
-                      color="secondary"
-                      onClick={onCancel}
-                      disabled={isSubmitting}
-                    >
-                      Cancel
-                    </Button>
-                  )}
-                </Box>
+                  <Button
+                    variant="outlined"
+                    color="secondary"
+                    onClick={onCancel}
+                    disabled={isSubmitting || externalSubmitting}
+                  >
+                    Cancel
+                  </Button>
+                </FlexBox>
               </Grid>
             </Grid>
           </form>

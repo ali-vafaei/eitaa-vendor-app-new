@@ -48,13 +48,23 @@ export default function ProductIntro({ product }: Props) {
     type: "type 1",
   });
 
+  // ✨ تابع کمکی برای تبدیل آدرس نسبی به کامل
+  const getFullImageUrl = (imageUrl: string) => {
+    if (!imageUrl) return "/assets/images/products/placeholder.png";
+    if (imageUrl.startsWith('http')) return imageUrl;
+    if (imageUrl.startsWith('/uploads')) {
+      return `http://localhost:4000${imageUrl}`;
+    }
+    return imageUrl;
+  };
+
   // ✨✨✨ راه حل نهایی و ضدخطا اینجاست ✨✨✨
   // 1. یک لیست عکس امن می‌سازیم که تضمین شده یک آرایه است.
   const imageList =
     (images && Array.isArray(images) && images.length > 0)
-      ? images
+      ? images.map(img => getFullImageUrl(img)) // ✨ آدرس کامل برای هر عکس
       : thumbnail
-      ? [thumbnail]
+      ? [getFullImageUrl(thumbnail)] // ✨ آدرس کامل برای thumbnail
       : ["/assets/images/products/placeholder.png"]; // یک عکس جایگزین در صورت نبود هیچ عکسی
 
   // 2. اطمینان حاصل می‌کنیم که ایندکس عکس انتخابی معتبر است.
@@ -79,9 +89,17 @@ export default function ProductIntro({ product }: Props) {
   const handleCartAmountChange = (amount: number) => () => {
     dispatch({
       type: "CHANGE_CART_AMOUNT",
-      payload: { price, qty: amount, name: title, imgUrl: thumbnail, id, slug },
+      payload: { price, qty: amount, name: title, imgUrl: getFullImageUrl(thumbnail), id, slug }, // ✨ آدرس کامل
     });
   };
+
+  // ✨ دیباگ: بررسی آدرس عکس‌ها
+  console.log('🖼️ ProductIntro Debug:', {
+    thumbnail,
+    images,
+    imageList,
+    selectedImageUrl
+  });
 
   return (
     <Box width="100%">
@@ -96,6 +114,11 @@ export default function ProductIntro({ product }: Props) {
               loading="eager"
               src={selectedImageUrl} // 3. از URL امن استفاده می‌کنیم
               sx={{ objectFit: "contain" }}
+              onError={(e) => {
+                console.error('❌ Image load error:', selectedImageUrl);
+                // در صورت خطا، عکس پیش‌فرض نمایش بده
+                e.currentTarget.src = "/assets/images/products/placeholder.png";
+              }}
             />
           </FlexBox>
 
@@ -114,7 +137,16 @@ export default function ProductIntro({ product }: Props) {
                 onClick={handleImageClick(ind)}
                 mr={ind === imageList.length - 1 ? "auto" : "10px"}
                 borderColor={selectedImage === ind ? "primary.main" : "grey.400"}>
-                <Avatar alt="product" src={url} variant="square" sx={{ height: 40 }} />
+                <Avatar
+                  alt="product"
+                  src={url}
+                  variant="square"
+                  sx={{ height: 40 }}
+                  onError={(e) => {
+                    console.error('❌ Thumbnail error:', url);
+                    e.currentTarget.src = "/assets/images/products/placeholder.png";
+                  }}
+                />
               </FlexRowCenter>
             ))}
           </FlexBox>

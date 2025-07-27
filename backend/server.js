@@ -4,6 +4,7 @@ const bcrypt = require('bcrypt');
 const cors = require('cors');
 const multer = require('multer'); // ✨ کتابخانه جدید برای آپلود فایل
 const path = require('path');   // ✨ کتابخانه داخلی نود برای کار با مسیرها
+const fs = require('fs');       // ✨ اضافه شد برای ایجاد پوشه
 const app = express();
 const port = 4000;
 const saltRounds = 10;
@@ -23,16 +24,39 @@ app.use(cors({
 }));
 app.use(express.json());
 
+// ✨ ایجاد پوشه uploads اگر وجود ندارد
+const uploadsDir = './uploads';
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+  console.log('📁 Uploads directory created successfully!');
+}
 
 // ✨ بخش جدید: سرور کردن فایل‌های استاتیک از پوشه uploads
 // این کد به مرورگر اجازه می‌دهد عکس‌های آپلود شده را ببیند
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.get('/uploads', (req, res) => {
+  const fs = require('fs');
+  try {
+    const files = fs.readdirSync('./uploads');
+    res.json({
+      files: files,
+      message: 'Files in uploads directory',
+      totalFiles: files.length
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Cannot read uploads directory' });
+  }
+});
 
 
 // --- ✨ بخش جدید: تنظیمات Multer برای ذخیره فایل‌ها ---
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, 'uploads/'); // فایل‌ها در پوشه‌ای به نام 'uploads' ذخیره می‌شوند
+    // مطمئن شویم که پوشه وجود دارد
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+    cb(null, uploadsDir);
   },
   filename: function (req, file, cb) {
     // یک نام منحصر به فرد برای فایل ایجاد می‌کنیم تا جایگزین نشود
@@ -40,7 +64,45 @@ const storage = multer.diskStorage({
     cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
   }
 });
-const upload = multer({ storage: storage });
+
+// ✨ اضافه کردن فیلتر برای نوع فایل و محدودیت حجم
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 5 * 1024 * 1024 // محدودیت 5MB
+  },
+  fileFilter: function (req, file, cb) {
+    // فقط فایل‌های تصویری مجاز
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('فقط فایل‌های تصویری مجاز هستند!'), false);
+    }
+  }
+});
+
+// ✨ API جدید برای آپلود عکس محصولات
+app.post('/api/upload', upload.single('image'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'هیچ فایلی انتخاب نشده است' });
+    }
+
+    console.log('✅ File uploaded successfully:', req.file.filename);
+
+    // آدرس عکس آپلود شده را برمی‌گردانیم
+    const imageUrl = `/uploads/${req.file.filename}`;
+    res.json({
+      success: true,
+      imageUrl: imageUrl,
+      message: 'عکس با موفقیت آپلود شد'
+    });
+
+  } catch (error) {
+    console.error('خطا در آپلود عکس:', error);
+    res.status(500).json({ error: 'خطا در آپلود عکس' });
+  }
+});
 
 // لاگ درخواست‌ها
 app.use((req, res, next) => {
@@ -345,27 +407,139 @@ app.get('/api/products/search/:query', async (req, res) => {
   }
 });
 
-// --- افزودن محصول جدید (نسخه نهایی و کامل) ---
-app.post('/api/products', async (req, res) => {
-  // دریافت تمام فیلدهای ممکن از body
-  const { name, price, stock, images, thumbnail, brand, categories, slug, discount, rating, size, colors, status, published } = req.body;
+// --- به‌روزرسانی محصول (اصلاح شده برای آرایه) ---
+app.put('/api/products/:id', async (req, res) => {
+  const { id } = req.params;
+  const {
+    name, price, stock, images, thumbnail, brand, categories,
+    slug, published, discount, rating, size, colors, status
+  } = req.body;
 
-  if (!name || !price || stock === undefined || !images || !Array.isArray(images) || images.length === 0) {
-    return res.status(400).json({ message: 'نام، قیمت، موجودی و حداقل یک تصویر الزامی هستند.' });
+  console.log('🔄 Updating product ID:', id);
+  console.log('📝 Received data:', {
+    thumbnail,
+    images,
+    imagesType: Array.isArray(images) ? 'array' : typeof images,
+    imagesLength: Array.isArray(images) ? images.length : 'not array'
+  });
+
+  try {
+    // ابتدا محصول فعلی را بگیریم
+    const currentProduct = await pool.query('SELECT * FROM products WHERE id = $1', [id]);
+    if (currentProduct.rows.length === 0) {
+      return res.status(404).json({ message: 'محصول پیدا نشد' });
+    }
+
+    const existing = currentProduct.rows[0];
+
+    // اگر thumbnail جدید placeholder است، از thumbnail قدیمی استفاده کن
+    let finalThumbnail = thumbnail;
+    if (thumbnail && thumbnail.includes('placeholder.png') && existing.thumbnail) {
+      finalThumbnail = existing.thumbnail;
+      console.log('🚫 Prevented placeholder override, keeping:', finalThumbnail);
+    }
+
+    // مدیریت images: اگر خالی است، از thumbnail استفاده کن
+    let finalImages = images;
+    if (!finalImages || finalImages === null || !Array.isArray(finalImages)) {
+      finalImages = finalThumbnail ? [finalThumbnail] : [];
+      console.log('📸 Images was invalid, using thumbnail:', finalImages);
+    }
+
+    console.log('💾 Final data to save:', {
+      finalThumbnail,
+      finalImages,
+      finalImagesType: Array.isArray(finalImages) ? 'array' : typeof finalImages
+    });
+
+    const result = await pool.query(
+        `UPDATE products SET 
+          name = $1, price = $2, stock = $3, images = $4, brand = $5, categories = $6, 
+          slug = $7, published = $8, discount = $9, rating = $10, size = $11, colors = $12, 
+          thumbnail = $13, status = $14
+         WHERE id = $15 RETURNING *`,
+        [
+          name,
+          Number(price),
+          Number(stock),
+          finalImages, // ✨ مستقیماً آرایه، بدون JSON.stringify
+          brand,
+          Array.isArray(categories) ? categories : [],
+          slug,
+          published,
+          discount,
+          rating,
+          size,
+          colors,
+          finalThumbnail,
+          status,
+          id
+        ]
+    );
+
+    const updatedProduct = {
+      ...result.rows[0],
+      title: result.rows[0].name,
+      // ✨ images قبلاً آرایه است، نیازی به parse نیست
+      images: result.rows[0].images
+    };
+
+    console.log('✅ Product updated successfully:', {
+      id: updatedProduct.id,
+      thumbnail: updatedProduct.thumbnail,
+      images: updatedProduct.images
+    });
+
+    res.status(200).json(updatedProduct);
+
+  } catch (err) {
+    console.error('❌ Error updating product:', err);
+    if (err.code === '23505') return res.status(409).json({ message: 'محصولی با این slug قبلاً وجود دارد' });
+    res.status(500).json({ message: 'خطا در به‌روزرسانی محصول' });
+  }
+});
+
+// --- افزودن محصول جدید (اصلاح شده برای آرایه) ---
+app.post('/api/products', async (req, res) => {
+  const {
+    name, price, stock, images, thumbnail, brand, categories,
+    slug, discount, rating, size, colors, status, published
+  } = req.body;
+
+  console.log('📝 Creating new product with data:', {
+    name,
+    thumbnail,
+    images,
+    imagesType: Array.isArray(images) ? 'array' : typeof images,
+    imagesLength: Array.isArray(images) ? images.length : 'not array'
+  });
+
+  if (!name || !price || stock === undefined) {
+    return res.status(400).json({ message: 'نام، قیمت و موجودی الزامی هستند.' });
   }
 
   try {
+    // اطمینان از اینکه images آرایه باشد
+    let finalImages = images;
+    if (!Array.isArray(finalImages)) {
+      finalImages = thumbnail ? [thumbnail] : [];
+      console.log('📸 Images was not array, created from thumbnail:', finalImages);
+    }
+
     const result = await pool.query(
-        `INSERT INTO products (name, price, stock, slug, published, images, thumbnail, brand, categories, discount, rating, size, colors, status) 
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING *`,
+        `INSERT INTO products (
+          name, price, stock, slug, published, images, thumbnail, brand, 
+          categories, discount, rating, size, colors, status
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) 
+        RETURNING *`,
         [
           name,
           Number(price),
           Number(stock),
           slug || `${name.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`,
           published !== false,
-          images,
-          thumbnail || images[0], // اگر thumbnail نبود، اولین عکس گالری را به عنوان thumbnail در نظر بگیر
+          finalImages, // ✨ مستقیماً آرایه، بدون JSON.stringify
+          thumbnail,
           brand,
           Array.isArray(categories) ? categories : [],
           discount || 0,
@@ -376,7 +550,19 @@ app.post('/api/products', async (req, res) => {
         ]
     );
 
-    const newProduct = { ...result.rows[0], title: result.rows[0].name };
+    const newProduct = {
+      ...result.rows[0],
+      title: result.rows[0].name,
+      // ✨ images قبلاً آرایه است، نیازی به parse نیست
+      images: result.rows[0].images
+    };
+
+    console.log('✅ Product created successfully:', {
+      id: newProduct.id,
+      thumbnail: newProduct.thumbnail,
+      images: newProduct.images
+    });
+
     res.status(201).json(newProduct);
 
   } catch (err) {
@@ -385,40 +571,6 @@ app.post('/api/products', async (req, res) => {
     res.status(500).json({ message: 'خطا در افزودن محصول به دیتابیس' });
   }
 });
-
-
-// --- به‌روزرسانی محصول (نسخه نهایی و کامل) ---
-app.put('/api/products/:id', async (req, res) => {
-  const { id } = req.params;
-  const { name, price, stock, images, thumbnail, brand, categories, slug, published, discount, rating, size, colors, status } = req.body;
-
-  try {
-    const result = await pool.query(
-        `UPDATE products SET 
-          name = $1, price = $2, stock = $3, images = $4, brand = $5, categories = $6, 
-          slug = $7, published = $8, discount = $9, rating = $10, size = $11, colors = $12, 
-          thumbnail = $13, status = $14 
-         WHERE id = $15 RETURNING *`,
-        [
-          name, Number(price), Number(stock), images, brand,
-          Array.isArray(categories) ? categories : [],
-          slug, published, discount, rating, size, colors,
-          thumbnail || (images && images.length > 0 ? images[0] : null), // منطق مشابه برای thumbnail
-          status, id
-        ]
-    );
-
-    if (result.rows.length === 0) return res.status(404).json({ message: 'محصول پیدا نشد' });
-
-    const updatedProduct = { ...result.rows[0], title: result.rows[0].name };
-    res.status(200).json(updatedProduct);
-  } catch (err) {
-    console.error('❌ Error updating product:', err);
-    if (err.code === '23505') return res.status(409).json({ message: 'محصولی با این slug قبلاً وجود دارد' });
-    res.status(500).json({ message: 'خطا در به‌روزرسانی محصول' });
-  }
-});
-
 
 // حذف نرم محصول (بایگانی)
 app.delete('/api/products/:id', async (req, res) => {
@@ -512,48 +664,7 @@ app.get('/api/products/stats', async (req, res) => {
   }
 });
 
-// عملیات bulk
-app.post('/api/products/bulk-action', async (req, res) => {
-  const { action, productIds } = req.body;
 
-  if (!action || !productIds || !Array.isArray(productIds)) {
-    return res.status(400).json({ message: 'اطلاعات نامعتبر' });
-  }
-
-  try {
-    let result;
-    switch (action) {
-      case 'publish':
-        result = await pool.query(
-          'UPDATE products SET published = true WHERE id = ANY($1) RETURNING *',
-          [productIds]
-        );
-        break;
-      case 'unpublish':
-        result = await pool.query(
-          'UPDATE products SET published = false WHERE id = ANY($1) RETURNING *',
-          [productIds]
-        );
-        break;
-      case 'delete':
-        result = await pool.query(
-          'DELETE FROM products WHERE id = ANY($1) RETURNING *',
-          [productIds]
-        );
-        break;
-      default:
-        return res.status(400).json({ message: 'عملیات نامعتبر' });
-    }
-
-    res.status(200).json({
-      message: `${result.rowCount} محصول با موفقیت ${action} شد`,
-      affectedProducts: result.rows
-    });
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ message: 'خطا در اجرای عملیات bulk' });
-  }
-});
 
 // بک آپ محصولات
 app.get('/api/products/export', async (req, res) => {
@@ -986,6 +1097,8 @@ app.get('/api/address/user', async (req, res) => {
     res.status(500).json({ message: 'خطا در دریافت آدرس‌ها' });
   }
 });
+
+
 
 // --- شروع سرور ---
 app.listen(port, () => {

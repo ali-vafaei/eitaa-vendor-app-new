@@ -18,7 +18,7 @@ interface Props {
   onDelete: () => void;
   onView: () => void;
   onTogglePublished: () => void;
-  onRestore: () => void; // 🔥 اضافه شد
+  onRestore: () => void;
 }
 // ===============================================================
 
@@ -28,9 +28,36 @@ export default function ProductRow({
   onDelete,
   onView,
   onTogglePublished,
-  onRestore // 🔥 اضافه شد
+  onRestore
 }: Props) {
   const { id, name, thumbnail, brand, categories, price, published } = product;
+
+  // ✨ تابع کمکی برای آدرس کامل عکس
+  const getImageUrl = (imageUrl: string) => {
+    if (!imageUrl) return "https://via.placeholder.com/40";
+
+    // اگر آدرس کامل است، همان را برگردان
+    if (imageUrl.startsWith('http')) return imageUrl;
+
+    // اگر آدرس نسبی است، آدرس کامل بساز
+    if (imageUrl.startsWith('/uploads')) {
+      return `http://localhost:4000${imageUrl}`;
+    }
+
+    // در غیر این صورت، آدرس را همان‌طور برگردان
+    return imageUrl;
+  };
+
+  // ✨ تابع کمکی برای نمایش دسته‌بندی
+  const getCategoryDisplay = (categories: any) => {
+    if (Array.isArray(categories) && categories.length > 0) {
+      return categories[0]; // نمایش اولین دسته‌بندی
+    }
+    if (typeof categories === 'string') {
+      return categories;
+    }
+    return '-';
+  };
 
   return (
     <TableRow>
@@ -38,13 +65,24 @@ export default function ProductRow({
       <TableCell>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <Avatar
-            src={thumbnail || "https://via.placeholder.com/40"}
+            src={getImageUrl(thumbnail)} // ✨ استفاده از تابع کمکی
             alt={name}
-            sx={{ width: 40, height: 40 }}
-          />
+            sx={{
+              width: 40,
+              height: 40,
+              // اگر عکس لود نشد، حرف اول نام را نمایش بده
+              bgcolor: thumbnail ? 'transparent' : 'primary.main'
+            }}
+          >
+            {!thumbnail && name ? name.charAt(0).toUpperCase() : ''}
+          </Avatar>
           <div>
-            <div style={{ fontWeight: 500 }}>{name}</div>
-            <div style={{ fontSize: '0.875rem', color: '#666' }}>#{id}</div>
+            <div style={{ fontWeight: 500, maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {name}
+            </div>
+            <div style={{ fontSize: '0.875rem', color: '#666' }}>
+              #{typeof id === 'string' ? id.split("-")[0] : id}
+            </div>
           </div>
         </div>
       </TableCell>
@@ -53,7 +91,7 @@ export default function ProductRow({
       <TableCell>
         {categories ? (
           <Chip
-            label={categories}
+            label={getCategoryDisplay(categories)} // ✨ استفاده از تابع کمکی
             size="small"
             variant="outlined"
             sx={{ textTransform: 'capitalize' }}
@@ -72,7 +110,9 @@ export default function ProductRow({
             >
               {brand.charAt(0).toUpperCase()}
             </Avatar>
-            {brand}
+            <span style={{ maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {brand}
+            </span>
           </div>
         ) : (
           <span style={{ color: '#999' }}>-</span>
@@ -88,22 +128,24 @@ export default function ProductRow({
 
       {/* وضعیت انتشار */}
       <TableCell>
-        <Switch
-          checked={published}
-          onChange={onTogglePublished}
-          color="primary"
-          size="small"
-        />
-        <span style={{
-          marginLeft: '8px',
-          color: published ? '#4caf50' : '#f44336',
-          fontSize: '0.875rem'
-        }}>
-          {published ? 'منتشر شده' : 'پیش‌نویس'}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <Switch
+            checked={published}
+            onChange={onTogglePublished}
+            color="primary"
+            size="small"
+          />
+          <span style={{
+            marginLeft: '8px',
+            color: published ? '#4caf50' : '#f44336',
+            fontSize: '0.875rem'
+          }}>
+            {published ? 'منتشر شده' : 'پیش‌نویس'}
+          </span>
+        </div>
       </TableCell>
 
-      {/* 🔥 دکمه‌های عملکرد بهبود یافته */}
+      {/* دکمه‌های عملکرد */}
       <TableCell align="center">
         <div style={{ display: 'flex', justifyContent: 'center', gap: '4px' }}>
           <Tooltip title="مشاهده محصول">

@@ -14,6 +14,20 @@ const nextConfig = {
         protocol: 'https',
         hostname: 'res.cloudinary.com', // این دامنه معمولا برای آپلود عکس استفاده می‌شود
       },
+      // ✨ اضافه شد برای سرور محلی backend
+      {
+        protocol: 'http',
+        hostname: 'localhost',
+        port: '4000',
+        pathname: '/uploads/**',
+      },
+      // ✨ اضافه شد برای IP محلی (در صورت نیاز)
+      {
+        protocol: 'http',
+        hostname: '127.0.0.1',
+        port: '4000',
+        pathname: '/uploads/**',
+      },
     ],
   },
 };
