@@ -176,7 +176,11 @@ app.post('/api/upload', upload.single('image'), (req, res) => {
 // ✨ API چندگانه آپلود - اصلاح شده
 app.post('/api/upload-multiple', upload.array('images', 10), (req, res) => {
   try {
+    console.log('📤 Received upload request');
+    console.log('📁 Files received:', req.files ? req.files.length : 0);
+
     if (!req.files || req.files.length === 0) {
+      console.log('❌ No files received');
       return res.status(400).json({ error: 'هیچ فایلی انتخاب نشده است' });
     }
 
@@ -184,20 +188,114 @@ app.post('/api/upload-multiple', upload.array('images', 10), (req, res) => {
 
     // ✨ ایجاد آرایه‌ای از URL‌های کامل عکس‌های آپلود شده
     const imageUrls = req.files.map(file => {
-      console.log(`  - ${file.filename}`);
+      console.log(`  - ${file.filename} (${file.size} bytes)`);
       return `http://localhost:4000/uploads/${file.filename}`;
     });
+
+    console.log('📋 Final URLs:', imageUrls);
 
     res.json({
       success: true,
       imageUrls: imageUrls,
       totalUploaded: req.files.length,
-      message: `${req.files.length} عکس با موفقیت آپلود شد`
+      message: `${req.files.length} عکس با موفقیت آپلود شد`,
+      // ✨ اضافه کردن جزئیات برای debug
+      uploadDetails: req.files.map(f => ({
+        originalName: f.originalname,
+        filename: f.filename,
+        size: f.size,
+        url: `http://localhost:4000/uploads/${f.filename}`
+      }))
     });
 
   } catch (error) {
-    console.error('خطا در آپلود چندین عکس:', error);
+    console.error('❌ خطا در آپلود چندین عکس:', error);
     res.status(500).json({ error: 'خطا در آپلود عکس‌ها' });
+  }
+});
+
+// ✨ بهبود API اضافه/ویرایش محصول
+app.post('/api/products', async (req, res) => {
+  const {
+    name, price, stock, images, thumbnail, brand, categories,
+    slug, discount, rating, size, colors, status, published
+  } = req.body;
+
+  console.log('📝 Creating new product with data:');
+  console.log('📸 Images received:', images);
+  console.log('📸 Images type:', Array.isArray(images) ? 'array' : typeof images);
+  console.log('📸 Images count:', Array.isArray(images) ? images.length : 'not array');
+  console.log('🖼️ Thumbnail:', thumbnail);
+
+  if (!name || !price || stock === undefined) {
+    return res.status(400).json({ message: 'نام، قیمت و موجودی الزامی هستند.' });
+  }
+
+  try {
+    // ✨ اطمینان از اینکه images آرایه باشد
+    let finalImages = [];
+    if (Array.isArray(images) && images.length > 0) {
+      finalImages = images;
+      console.log('✅ Using provided images array:', finalImages.length);
+    } else if (thumbnail) {
+      finalImages = [thumbnail];
+      console.log('✅ Created images array from thumbnail');
+    }
+
+    // ✨ انتخاب thumbnail (آخرین عکس یا thumbnail دستی)
+    let finalThumbnail = thumbnail;
+    if (!finalThumbnail && finalImages.length > 0) {
+      finalThumbnail = finalImages[finalImages.length - 1]; // آخرین عکس
+      console.log('✅ Selected last image as thumbnail:', finalThumbnail);
+    }
+
+    console.log('💾 Final data to save:');
+    console.log('📸 Final images:', finalImages);
+    console.log('🖼️ Final thumbnail:', finalThumbnail);
+
+    const result = await pool.query(
+        `INSERT INTO products (
+          name, price, stock, slug, published, images, thumbnail, brand, 
+          categories, discount, rating, size, colors, status
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) 
+        RETURNING *`,
+        [
+          name,
+          Number(price),
+          Number(stock),
+          slug || `${name.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`,
+          published !== false,
+          finalImages, // ✨ آرایه کامل عکس‌ها
+          finalThumbnail, // ✨ آخرین عکس به عنوان thumbnail
+          brand,
+          Array.isArray(categories) ? categories : [],
+          discount || 0,
+          rating || 0,
+          size || [],
+          colors || [],
+          status
+        ]
+    );
+
+    let newProduct = {
+      ...result.rows[0],
+      title: result.rows[0].name,
+      images: result.rows[0].images // آرایه کامل
+    };
+
+    // ✨ اصلاح URL های عکس قبل از ارسال
+    newProduct = fixImageUrls(newProduct);
+
+    console.log('✅ Product created successfully:');
+    console.log('📸 Images saved:', newProduct.images);
+    console.log('🖼️ Thumbnail saved:', newProduct.thumbnail);
+
+    res.status(201).json(newProduct);
+
+  } catch (err) {
+    console.error('❌ Error adding product:', err);
+    if (err.code === '23505') return res.status(409).json({ message: `محصولی با این slug قبلاً وجود دارد.` });
+    res.status(500).json({ message: 'خطا در افزودن محصول به دیتابیس' });
   }
 });
 

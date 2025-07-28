@@ -39,7 +39,7 @@ interface Props {
 export default function ProductForm({ productToEdit, onSave, onCancel, isSubmitting: externalSubmitting }: Props) {
   const [apiError, setApiError] = useState("");
   const [files, setFiles] = useState<File[]>([]);
-  const [existingImages, setExistingImages] = useState<string[]>([]); // ✨ عکس‌های موجود
+  const [existingImages, setExistingImages] = useState<string[]>([]);
   const [isSubmittingForm, setIsSubmittingForm] = useState(false);
 
   const INITIAL_VALUES = {
@@ -67,170 +67,218 @@ export default function ProductForm({ productToEdit, onSave, onCancel, isSubmitt
     }
   }, [productToEdit]);
 
-// تابع اصلی ارسال فرم که چندین فایل را مدیریت می‌کند
+  const handleFormSubmit = async (values: any, { setSubmitting }: any) => {
+    // ✨ جلوگیری از double submit
+    if (isSubmittingForm) {
+      console.log('🛑 Form already submitting, ignoring...');
+      return;
+    }
 
-// کل تابع handleFormSubmit رو با این جایگزین کن:
+    console.log('🚀 Form submit started...');
+    console.log('📋 Form values:', values);
+    console.log('📁 New files:', files.length);
+    console.log('📸 Existing images:', existingImages.length);
 
-const handleFormSubmit = async (values: any, { setSubmitting }: any) => {
-  // ✨ جلوگیری از double submit
-  if (isSubmittingForm) {
-    console.log('🛑 Form already submitting, ignoring...');
-    return;
+    setIsSubmittingForm(true);
+    setApiError("");
+    setSubmitting(true);
+    const isEditing = !!productToEdit;
+
+    try {
+      let allImageUrls = []; // آرایه نهایی همه عکس‌ها
+      let thumbnailUrl = values.thumbnail; // عکس اصلی محصول
+      let newImageUrls = []; // عکس‌های جدید آپلود شده
+
+      console.log('📸 Starting image processing...');
+
+      // مرحله ۱: شروع با عکس‌های موجود (که کاربر حذف نکرده)
+      if (existingImages.length > 0) {
+        allImageUrls = [...existingImages];
+        console.log('📸 Added existing images:', allImageUrls.length);
+      }
+
+      // مرحله ۲: آپلود فایل‌های جدید (اگر وجود دارند)
+if (files && files.length > 0) {
+  console.log(`🚀 Uploading ${files.length} new image files...`);
+  console.log('📁 Files to upload:', files.map(f => f.name));
+
+  const formData = new FormData();
+  files.forEach((file, index) => {
+    formData.append('images', file);
+    console.log(`📤 Adding file ${index + 1}: ${file.name} (${file.size} bytes)`);
+  });
+
+  console.log('📤 FormData created, sending to backend...');
+
+  const uploadResponse = await fetch('http://localhost:4000/api/upload-multiple', {
+    method: 'POST',
+    body: formData,
+  });
+
+  console.log('📡 Upload response status:', uploadResponse.status);
+
+  const uploadResult = await uploadResponse.json();
+  console.log('📡 Upload result:', uploadResult);
+
+  if (!uploadResponse.ok) {
+    throw new Error(uploadResult.error || 'خطا در آپلود عکس‌ها');
   }
 
-  console.log('🚀 Form submit started...');
-  console.log('📋 Form values:', values);
-  console.log('📁 New files:', files.length);
-  console.log('📸 Existing images:', existingImages.length);
+      // اضافه کردن URL های جدید به متغیر و لیست کل
+        newImageUrls = uploadResult.imageUrls || [];
+        allImageUrls = [...allImageUrls, ...newImageUrls];
 
-  setIsSubmittingForm(true);
-  setApiError("");
-  setSubmitting(true);
-  const isEditing = !!productToEdit;
-
-  try {
-    let allImageUrls = []; // آرایه نهایی همه عکس‌ها
-    let thumbnailUrl = values.thumbnail; // عکس اصلی محصول
-
-    console.log('📸 Starting image processing...');
-
-    // مرحله ۱: شروع با عکس‌های موجود (که کاربر حذف نکرده)
-    if (existingImages.length > 0) {
-      allImageUrls = [...existingImages];
-      console.log('📸 Added existing images:', allImageUrls.length);
-    }
-
-    // مرحله ۲: آپلود فایل‌های جدید (اگر وجود دارند)
-    if (files && files.length > 0) {
-      console.log(`🚀 Uploading ${files.length} new image files...`);
-
-      const formData = new FormData();
-      files.forEach((file, index) => {
-        formData.append('images', file);
-        console.log(`📤 Adding file ${index + 1}: ${file.name}`);
-      });
-
-      console.log('📤 FormData created, sending to backend...');
-
-      const uploadResponse = await fetch('http://localhost:4000/api/upload-multiple', {
-        method: 'POST',
-        body: formData,
-      });
-
-      console.log('📡 Upload response status:', uploadResponse.status);
-
-      const uploadResult = await uploadResponse.json();
-      console.log('📡 Upload result:', uploadResult);
-
-      if (!uploadResponse.ok) {
-        throw new Error(uploadResult.error || 'خطا در آپلود عکس‌ها');
+        console.log('✅ New images uploaded:', newImageUrls.length);
+        console.log('🎯 New uploaded URLs:', newImageUrls);
+        console.log('📸 Total images after upload:', allImageUrls.length);
+        console.log('📋 All image URLs:', allImageUrls);
       }
 
-      // اضافه کردن URL های جدید به لیست موجود
-      const newImageUrls = uploadResult.imageUrls || [];
-      allImageUrls = [...allImageUrls, ...newImageUrls];
-
-      console.log('✅ New images uploaded:', newImageUrls.length);
-      console.log('📸 Total images after upload:', allImageUrls.length);
-    }
-
-    // مرحله ۳: اضافه کردن URL دستی (اگر وجود دارد و تکراری نیست)
-    if (values.thumbnail && values.thumbnail.trim() !== '' && !allImageUrls.includes(values.thumbnail)) {
-      allImageUrls = [values.thumbnail, ...allImageUrls];
-      console.log('📸 Added manual URL to images');
-    }
-
-    // مرحله ۴: تعیین thumbnail نهایی
-    if (values.thumbnail && values.thumbnail.trim() !== '') {
-      thumbnailUrl = values.thumbnail;
-    } else if (allImageUrls.length > 0) {
-      thumbnailUrl = allImageUrls[0];
-    } else if (isEditing && productToEdit?.thumbnail) {
-      thumbnailUrl = productToEdit.thumbnail;
-    }
-
-    // بررسی وجود حداقل یک عکس
-    if (!thumbnailUrl && allImageUrls.length === 0) {
-      throw new Error('لطفاً حداقل یک عکس برای محصول انتخاب یا آدرس آن را وارد کنید.');
-    }
-
-    console.log('📸 Final processing result:');
-    console.log('📸 Thumbnail:', thumbnailUrl);
-    console.log('📸 Total images:', allImageUrls.length);
-    console.log('📸 All image URLs:', allImageUrls);
-
-    // ✨ آماده‌سازی داده‌ها - URL ها را بدون http://localhost:4000 ذخیره می‌کنیم
-    const cleanImageUrls = allImageUrls.map(url => {
-      if (typeof url === 'string') {
-        return url.replace('http://localhost:4000', '');
+      // مرحله ۳: اضافه کردن URL دستی (اگر وجود دارد و تکراری نیست)
+      if (values.thumbnail && values.thumbnail.trim() !== '' && !allImageUrls.includes(values.thumbnail)) {
+        allImageUrls = [values.thumbnail, ...allImageUrls];
+        console.log('📸 Added manual URL to images');
       }
-      return url;
-    });
 
-    const cleanThumbnail = thumbnailUrl ?
-      (typeof thumbnailUrl === 'string' ? thumbnailUrl.replace('http://localhost:4000', '') : thumbnailUrl)
-      : '';
 
-    const productData = {
-      name: values.name,
-      price: Number(values.price),
-      stock: Number(values.stock),
-      brand: values.brand,
-      categories: Array.isArray(values.category) ? values.category : [],
-      slug: values.slug || values.name.toLowerCase().replace(/\s+/g, '-'),
-      thumbnail: cleanThumbnail,
-      images: cleanImageUrls, // ✨ آرایه کامل شامل موجود + جدید
-      published: values.published !== false,
-      description: values.description,
-    };
+        // مرحله ۴: تعیین thumbnail نهایی - منطق اصلاح شده
+        console.log('🎯 Determining thumbnail logic...');
+        console.log('📝 Form thumbnail field:', values.thumbnail);
+        console.log('📁 New files uploaded:', files.length);
+        console.log('🆕 New image URLs count:', newImageUrls.length);
+        console.log('📸 Existing images:', existingImages.length);
 
-    console.log('📤 Sending product data to backend:');
-    console.log('📤 Clean images count:', cleanImageUrls.length);
-    console.log('📤 Clean thumbnail:', cleanThumbnail);
+        if (newImageUrls.length > 0) {
+          // ✨ اولویت اول: اگر عکس جدید آپلود شده، آخرین عکس جدید رو thumbnail کن
+          thumbnailUrl = newImageUrls[newImageUrls.length - 1]; // آخرین عکس جدید
+          console.log('🆕 Using latest uploaded image as thumbnail:', thumbnailUrl);
+          console.log('🎯 Selected from', newImageUrls.length, 'new images');
 
-    const apiUrl = isEditing
-      ? `http://localhost:4000/api/products/${productToEdit.id}`
-      : 'http://localhost:4000/api/products';
-    const method = isEditing ? 'PUT' : 'POST';
+        } else if (values.thumbnail && values.thumbnail.trim() !== '' && !values.thumbnail.includes('placeholder')) {
+          // اولویت دوم: اگر کاربر دستی thumbnail معتبر وارد کرده
+          thumbnailUrl = values.thumbnail;
+          console.log('✅ Using manual thumbnail:', thumbnailUrl);
 
-    const response = await fetch(apiUrl, {
-      method: method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(productData),
-    });
+        } else if (existingImages.length > 0) {
+          // اولویت سوم: اگر هیچ عکس جدیدی آپلود نشده، از آخرین عکس موجود استفاده کن
+          thumbnailUrl = existingImages[existingImages.length - 1]; // آخرین عکس موجود
+          console.log('📸 Using latest existing image as thumbnail:', thumbnailUrl);
 
-    console.log('📡 Product save response status:', response.status);
+        } else if (allImageUrls.length > 0) {
+          // اولویت چهارم: fallback - از آخرین عکس در کل لیست استفاده کن
+          thumbnailUrl = allImageUrls[allImageUrls.length - 1];
+          console.log('🔄 Using latest from all images as thumbnail:', thumbnailUrl);
 
-    const data = await response.json();
-    console.log('📡 Product save result:', data);
+        } else if (isEditing && productToEdit?.thumbnail && !productToEdit.thumbnail.includes('placeholder')) {
+          // اولویت پنجم: در نهایت از thumbnail قدیمی استفاده کن (اگر placeholder نباشه)
+          thumbnailUrl = productToEdit.thumbnail;
+          console.log('🔙 Using existing product thumbnail:', thumbnailUrl);
 
-    if (!response.ok) {
-      throw new Error(data.message || 'خطا در ذخیره محصول');
-    }
+        } else {
+          // آخرین گزینه: اگر هیچکدوم موجود نبود، یه thumbnail پیش‌فرض بساز
+          thumbnailUrl = `https://via.placeholder.com/300.png?text=${encodeURIComponent(values.name)}`;
+          console.log('🎭 Using placeholder thumbnail:', thumbnailUrl);
+        }
 
-    console.log('✅ Product saved successfully with images:', {
+        console.log('✅ Final thumbnail selected:', thumbnailUrl);
+
+        // بررسی وجود حداقل یک عکس
+        if (!thumbnailUrl && allImageUrls.length === 0) {
+          throw new Error('لطفاً حداقل یک عکس برای محصول انتخاب یا آدرس آن را وارد کنید.');
+        }
+      console.log('📸 Final processing result:');
+      console.log('📸 Thumbnail:', thumbnailUrl);
+      console.log('📸 Total images:', allImageUrls.length);
+      console.log('📸 All image URLs:', allImageUrls);
+
+      // ✨ آماده‌سازی داده‌ها - URL ها را بدون http://localhost:4000 ذخیره می‌کنیم
+      const cleanImageUrls = allImageUrls.map(url => {
+        if (typeof url === 'string') {
+          return url.replace('http://localhost:4000', '');
+        }
+        return url;
+      });
+
+      const cleanThumbnail = thumbnailUrl ?
+        (typeof thumbnailUrl === 'string' ? thumbnailUrl.replace('http://localhost:4000', '') : thumbnailUrl)
+        : '';
+
+      console.log('💾 Clean data preparation:');
+      console.log('📸 Clean images count:', cleanImageUrls.length);
+      console.log('📸 Clean images:', cleanImageUrls);
+      console.log('🖼️ Clean thumbnail:', cleanThumbnail);
+
+      const productData = {
+        name: values.name,
+        price: Number(values.price),
+        stock: Number(values.stock),
+        brand: values.brand,
+        categories: Array.isArray(values.category) ? values.category : [],
+        slug: values.slug || values.name.toLowerCase().replace(/\s+/g, '-'),
+        thumbnail: cleanThumbnail, // ✨ آخرین عکس به عنوان thumbnail
+        images: cleanImageUrls, // ✨ آرایه کامل شامل همه عکس‌ها
+        published: values.published !== false,
+        description: values.description,
+      };
+
+      console.log('📤 Sending product data to backend:');
+      console.log('📤 Clean images count:', cleanImageUrls.length);
+      console.log('📤 Clean thumbnail:', cleanThumbnail);
+
+      const apiUrl = isEditing
+        ? `http://localhost:4000/api/products/${productToEdit.id}`
+        : 'http://localhost:4000/api/products';
+      const method = isEditing ? 'PUT' : 'POST';
+
+      const response = await fetch(apiUrl, {
+        method: method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(productData),
+      });
+
+      console.log('📡 Product save response status:', response.status);
+
+      const data = await response.json();
+      console.log('📡 Product save result:', data);
+      console.log('✅ Product saved successfully with images:', {
       productId: data.id,
       thumbnail: data.thumbnail,
       totalImages: data.images ? data.images.length : 0,
       imagesList: data.images
-    });
+     });
 
-    // پاک کردن فایل‌های انتخاب شده بعد از موفقیت
-    setFiles([]);
-    setExistingImages([]); // ✨ پاک کردن عکس‌های موجود چون حالا تو دیتابیس ذخیره شده
+      if (!response.ok) {
+        throw new Error(data.message || 'خطا در ذخیره محصول');
+      }
 
-    // فراخوانی callback
-    onSave(data);
-    return; // ✨ اضافه کنید برای جلوگیری از double submit
+      console.log('✅ Product saved successfully with images:', {
+        productId: data.id,
+        thumbnail: data.thumbnail,
+        totalImages: data.images ? data.images.length : 0,
+        imagesList: data.images
+      });
 
-  } catch (error: any) {
-    console.error('❌ Error in form submit:', error);
-    setApiError(error.message);
-  } finally {
-    setSubmitting(false);
-    setIsSubmittingForm(false);
-  }
-};
+      // پاک کردن فایل‌های انتخاب شده بعد از موفقیت
+      setFiles([]);
+      setExistingImages([]);
+
+      // ✨ اضافه کردن این دو خط:
+        setIsSubmittingForm(false);
+        setSubmitting(false);
+
+      // فراخوانی callback
+      onSave(data);
+      return;
+
+    } catch (error: any) {
+      console.error('❌ Error in form submit:', error);
+      setApiError(error.message);
+    } finally {
+      setSubmitting(false);
+      setIsSubmittingForm(false);
+    }
+  };
+
   // ✨ مدیریت آپلود فایل‌های جدید (اضافه شدن، نه جایگزین شدن)
   const handleChangeDropZone = (newFiles: File[]) => {
     console.log('📁 Files selected:', newFiles.map(f => f.name));

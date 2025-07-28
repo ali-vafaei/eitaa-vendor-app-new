@@ -18,12 +18,13 @@ export default async function ProductDetails({ params }) {
   console.log("\n--- [صفحه فرانت‌اند] شروع رندر صفحه جزئیات محصول ---");
   console.log("[صفحه فرانت‌اند] پارامترهای دریافت شده:", params);
 
-  if (!params || typeof params.slug !== 'string') {
+  const resolvedParams = await params;
+  if (!resolvedParams || typeof resolvedParams.slug !== 'string') {
     console.error("[صفحه فرانت‌اند] خطا: Slug وجود ندارد یا از نوع رشته نیست.");
     notFound();
   }
 
-  const slug = params.slug as string;
+  const slug = resolvedParams.slug as string;
   console.log(`[صفحه فرانت‌اند] تلاش برای دریافت محصول با slug: "${slug}"`);
   // --- پایان لاگ‌های عیب‌یابی ---
 
