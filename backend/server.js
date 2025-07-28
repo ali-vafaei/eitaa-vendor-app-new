@@ -34,6 +34,24 @@ if (!fs.existsSync(uploadsDir)) {
 // ✨ بخش جدید: سرور کردن فایل‌های استاتیک از پوشه uploads
 // این کد به مرورگر اجازه می‌دهد عکس‌های آپلود شده را ببیند
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// ✨ سرو کردن عکس‌های اصلی قالب از فرانت‌اند
+const frontendAssetsPath = path.join(__dirname, '../frontend/public');
+app.use('/assets', (req, res, next) => {
+  const filePath = path.join(frontendAssetsPath, 'assets', req.path);
+  console.log('🔍 Assets request:', req.originalUrl);
+  console.log('🔍 Looking for file at:', filePath);
+  console.log('🔍 File exists:', fs.existsSync(filePath));
+  next();
+}, express.static(path.join(frontendAssetsPath, 'assets')));
+
+// ✨ لاگ برای بررسی مسیر
+console.log('📁 Frontend assets path:', frontendAssetsPath);
+console.log('📁 Assets served from:', path.join(frontendAssetsPath, 'assets'));
+const testImagePath = path.join(frontendAssetsPath, 'assets', 'images', 'products', 'Fashion', 'Shoes', '2.PumaBlack.png');
+console.log('🧪 Test image path:', testImagePath);
+console.log('🧪 Test image exists:', fs.existsSync(testImagePath));
+
 app.get('/uploads', (req, res) => {
   const fs = require('fs');
   try {
@@ -48,6 +66,35 @@ app.get('/uploads', (req, res) => {
   }
 });
 
+// ✨ تست endpoint برای بررسی دسترسی به فایل‌ها
+app.get('/api/check-assets', (req, res) => {
+  const fs = require('fs');
+  const assetsPath = path.join(frontendAssetsPath, 'assets', 'images', 'products');
+
+  try {
+    if (fs.existsSync(assetsPath)) {
+      const files = fs.readdirSync(assetsPath);
+      res.json({
+        status: 'success',
+        assetsPath: assetsPath,
+        fileCount: files.length,
+        firstFewFiles: files.slice(0, 5)
+      });
+    } else {
+      res.json({
+        status: 'error',
+        message: 'Assets path not found',
+        assetsPath: assetsPath
+      });
+    }
+  } catch (error) {
+    res.status(500).json({
+      status: 'error',
+      message: error.message,
+      assetsPath: assetsPath
+    });
+  }
+});
 
 // --- ✨ بخش جدید: تنظیمات Multer برای ذخیره فایل‌ها ---
 const storage = multer.diskStorage({
@@ -81,7 +128,29 @@ const upload = multer({
   }
 });
 
-// ✨ API جدید برای آپلود عکس محصولات
+// ✨ تابع helper برای اصلاح URL های عکس
+const fixImageUrls = (product) => {
+  const baseUrl = 'http://localhost:4000';
+
+  // اصلاح thumbnail
+  if (product.thumbnail && !product.thumbnail.startsWith('http')) {
+    product.thumbnail = baseUrl + product.thumbnail;
+  }
+
+  // اصلاح آرایه images
+  if (product.images && Array.isArray(product.images)) {
+    product.images = product.images.map(img => {
+      if (img && !img.startsWith('http')) {
+        return baseUrl + img;
+      }
+      return img;
+    });
+  }
+
+  return product;
+};
+
+// ✨ API تکی آپلود - اصلاح شده
 app.post('/api/upload', upload.single('image'), (req, res) => {
   try {
     if (!req.file) {
@@ -90,8 +159,8 @@ app.post('/api/upload', upload.single('image'), (req, res) => {
 
     console.log('✅ File uploaded successfully:', req.file.filename);
 
-    // آدرس عکس آپلود شده را برمی‌گردانیم
-    const imageUrl = `/uploads/${req.file.filename}`;
+    // ✨ آدرس کامل عکس آپلود شده با http://localhost:4000
+    const imageUrl = `http://localhost:4000/uploads/${req.file.filename}`;
     res.json({
       success: true,
       imageUrl: imageUrl,
@@ -104,13 +173,41 @@ app.post('/api/upload', upload.single('image'), (req, res) => {
   }
 });
 
+// ✨ API چندگانه آپلود - اصلاح شده
+app.post('/api/upload-multiple', upload.array('images', 10), (req, res) => {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: 'هیچ فایلی انتخاب نشده است' });
+    }
+
+    console.log(`✅ ${req.files.length} files uploaded successfully:`);
+
+    // ✨ ایجاد آرایه‌ای از URL‌های کامل عکس‌های آپلود شده
+    const imageUrls = req.files.map(file => {
+      console.log(`  - ${file.filename}`);
+      return `http://localhost:4000/uploads/${file.filename}`;
+    });
+
+    res.json({
+      success: true,
+      imageUrls: imageUrls,
+      totalUploaded: req.files.length,
+      message: `${req.files.length} عکس با موفقیت آپلود شد`
+    });
+
+  } catch (error) {
+    console.error('خطا در آپلود چندین عکس:', error);
+    res.status(500).json({ error: 'خطا در آپلود عکس‌ها' });
+  }
+});
+
 // لاگ درخواست‌ها
 app.use((req, res, next) => {
   console.log(`${req.method} ${req.path}`, req.body);
   next();
 });
 
-// تنظیمات پایگاه داده
+// ✨ اتصال به دیتابیس PostgreSQL
 const pool = new Pool({
   user: 'vafaei',
   host: 'localhost',
@@ -120,11 +217,12 @@ const pool = new Pool({
 });
 
 // تست اتصال دیتابیس
-pool.connect((err) => {
+pool.connect((err, client, release) => {
   if (err) {
-    console.error('❌ Database connection error:', err);
+    console.error('❌ Error connecting to database:', err);
   } else {
-    console.log('✅ Database connected successfully!');
+    console.log('✅ Connected to PostgreSQL database successfully!');
+    release();
   }
 });
 
@@ -337,11 +435,15 @@ app.get('/api/products', async (req, res) => {
     const result = await pool.query('SELECT * FROM products WHERE published = true OR published IS NULL ORDER BY id DESC');
     console.log(`📦 Found ${result.rows.length} published products`);
 
-    const productsForFrontend = result.rows.map(p => ({
-      ...p,
-      title: p.name,
-      published: p.published !== false
-    }));
+    const productsForFrontend = result.rows.map(p => {
+      const product = {
+        ...p,
+        title: p.name,
+        published: p.published !== false
+      };
+      // ✨ اصلاح URL های عکس
+      return fixImageUrls(product);
+    });
 
     res.status(200).json(productsForFrontend);
   } catch (err) {
@@ -357,11 +459,15 @@ app.get('/api/products/all', async (req, res) => {
     const result = await pool.query('SELECT * FROM products ORDER BY id DESC');
     console.log(`📦 Found ${result.rows.length} products total`);
 
-    const productsForFrontend = result.rows.map(p => ({
-      ...p,
-      title: p.name,
-      published: p.published !== false
-    }));
+    const productsForFrontend = result.rows.map(p => {
+      const product = {
+        ...p,
+        title: p.name,
+        published: p.published !== false
+      };
+      // ✨ اصلاح URL های عکس
+      return fixImageUrls(product);
+    });
 
     res.status(200).json(productsForFrontend);
   } catch (err) {
@@ -377,11 +483,15 @@ app.get('/api/products/drafts', async (req, res) => {
     const result = await pool.query('SELECT * FROM products WHERE published = false ORDER BY id DESC');
     console.log(`📦 Found ${result.rows.length} draft products`);
 
-    const productsForFrontend = result.rows.map(p => ({
-      ...p,
-      title: p.name,
-      published: Boolean(p.published)
-    }));
+    const productsForFrontend = result.rows.map(p => {
+      const product = {
+        ...p,
+        title: p.name,
+        published: Boolean(p.published)
+      };
+      // ✨ اصلاح URL های عکس
+      return fixImageUrls(product);
+    });
 
     res.status(200).json(productsForFrontend);
   } catch (err) {
@@ -400,7 +510,10 @@ app.get('/api/products/search/:query', async (req, res) => {
       AND published = true
       ORDER BY name ASC
     `, [`%${query}%`]);
-    res.status(200).json(result.rows);
+
+    // ✨ اصلاح URL های عکس برای نتایج جستجو
+    const productsWithFixedUrls = result.rows.map(product => fixImageUrls(product));
+    res.status(200).json(productsWithFixedUrls);
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ message: 'خطا در جستجو' });
@@ -477,12 +590,15 @@ app.put('/api/products/:id', async (req, res) => {
         ]
     );
 
-    const updatedProduct = {
+    let updatedProduct = {
       ...result.rows[0],
       title: result.rows[0].name,
       // ✨ images قبلاً آرایه است، نیازی به parse نیست
       images: result.rows[0].images
     };
+
+    // ✨ اصلاح URL های عکس قبل از ارسال
+    updatedProduct = fixImageUrls(updatedProduct);
 
     console.log('✅ Product updated successfully:', {
       id: updatedProduct.id,
@@ -550,12 +666,15 @@ app.post('/api/products', async (req, res) => {
         ]
     );
 
-    const newProduct = {
+    let newProduct = {
       ...result.rows[0],
       title: result.rows[0].name,
       // ✨ images قبلاً آرایه است، نیازی به parse نیست
       images: result.rows[0].images
     };
+
+    // ✨ اصلاح URL های عکس قبل از ارسال
+    newProduct = fixImageUrls(newProduct);
 
     console.log('✅ Product created successfully:', {
       id: newProduct.id,
@@ -603,9 +722,14 @@ app.patch('/api/products/:id/restore', async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ message: 'محصول پیدا نشد' });
     }
+
+    // ✨ اصلاح URL های عکس
+    let restoredProduct = { ...result.rows[0] };
+    restoredProduct = fixImageUrls(restoredProduct);
+
     res.status(200).json({
       message: 'محصول با موفقیت بازگردانی شد',
-      product: result.rows[0]
+      product: restoredProduct
     });
   } catch (err) {
     console.error(err.message);
@@ -632,7 +756,11 @@ app.get('/api/products/:identifier', async (req, res) => {
         }
 
         // محصول پیدا شد، آن را به همراه فیلد title برمی‌گردانیم
-        const product = { ...result.rows[0], title: result.rows[0].name };
+        let product = { ...result.rows[0], title: result.rows[0].name };
+
+        // ✨ اصلاح URL های عکس
+        product = fixImageUrls(product);
+
         res.status(200).json(product);
 
     } catch (err) {
@@ -664,15 +792,17 @@ app.get('/api/products/stats', async (req, res) => {
   }
 });
 
-
-
 // بک آپ محصولات
 app.get('/api/products/export', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM products ORDER BY id');
+
+    // ✨ اصلاح URL های عکس برای export
+    const productsWithFixedUrls = result.rows.map(product => fixImageUrls(product));
+
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Content-Disposition', 'attachment; filename=products-backup.json');
-    res.status(200).json(result.rows);
+    res.status(200).json(productsWithFixedUrls);
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ message: 'خطا در تهیه بک آپ' });

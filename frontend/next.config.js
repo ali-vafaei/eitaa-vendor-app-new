@@ -1,34 +1,36 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // این خط برای جلوگیری از رندر دوباره در حالت توسعه مفید است
   reactStrictMode: false,
 
-  // ✨✨✨ راه حل اصلی اینجاست ✨✨✨
-  // ما به Next.js می‌گوییم که اجازه دارد از دامنه‌های زیر عکس بارگذاری کند.
+  // ✨✨✨ بخش تنظیمات تصاویر - اصلاح شده ✨✨✨
   images: {
     remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: 'via.placeholder.com',
-      },
-      {
-        protocol: 'https',
-        hostname: 'res.cloudinary.com', // این دامنه معمولا برای آپلود عکس استفاده می‌شود
-      },
-      // ✨ اضافه شد برای سرور محلی backend
+      // برای سرور محلی بک‌اند - همه مسیرها
       {
         protocol: 'http',
         hostname: 'localhost',
         port: '4000',
-        pathname: '/uploads/**',
+        pathname: '/**', // ✨ همه مسیرها: /uploads/**, /assets/**, etc
       },
-      // ✨ اضافه شد برای IP محلی (در صورت نیاز)
+      // برای عکس‌های موقت و جایگزین (placeholder)
       {
-        protocol: 'http',
-        hostname: '127.0.0.1',
-        port: '4000',
-        pathname: '/uploads/**',
+        protocol: 'https',
+        hostname: 'via.placeholder.com',
+        pathname: '/**',
+      },
+      // یک سرویس ابری رایج برای عکس
+      {
+        protocol: 'https',
+        hostname: 'res.cloudinary.com',
+        pathname: '/**',
       },
     ],
+    // ✨ برای سازگاری بیشتر
+    domains: ['localhost'],
+    dangerouslyAllowSVG: true,
+    contentDispositionType: 'attachment',
+    contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
   },
 };
 
