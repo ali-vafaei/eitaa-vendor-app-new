@@ -75,16 +75,17 @@ export default function EditProductPage() {
         return `${baseSlug || 'product'}-${timestamp}`;
       };
 
-      const productData = {
-        name: values.name.trim(),
-        price: Number(values.price),
-        stock: Number(values.stock),
-        brand: values.brand || '',
-       categories: Array.isArray(values.category) ? values.category : [], // ✅ اطمینان از array بودن
-        slug: generateSlug(values.name),
-        thumbnail: values.thumbnail || "https://via.placeholder.com/300.png?text=" + encodeURIComponent(values.name),
-        published: product?.published ?? true, // حفظ وضعیت قبلی
-      };
+        const productData = {
+          name: values.name.trim(),
+          price: Number(values.price),
+          stock: Number(values.stock),
+          brand: values.brand || '',
+          categories: Array.isArray(values.category) ? values.category : [],
+          slug: generateSlug(values.name),
+          thumbnail: values.finalThumbnail || values.thumbnail || "https://via.placeholder.com/300.png?text=" + encodeURIComponent(values.name),
+          images: values.uploadedImageUrls || values.images || [], // ✅ اضافه شد
+          published: product?.published ?? true,
+        };
 
       console.log('📤 Sending update data:', productData);
 
@@ -98,6 +99,8 @@ export default function EditProductPage() {
       console.log('📡 Response status:', response.status);
       const result = await response.json();
       console.log('📦 Server response:', result);
+      console.log('🔍 BACKEND RESPONSE IMAGES:', result.images);
+      console.log('🔍 BACKEND IMAGES COUNT:', result.images?.length);
 
       if (!response.ok) {
         throw new Error(result.message || `خطای سرور: ${response.status}`);

@@ -242,8 +242,10 @@ if (files && files.length > 0) {
       console.log('📤 Sending product data to backend:');
       console.log('📤 Clean images count:', cleanImageUrls.length);
       console.log('📤 Clean thumbnail:', cleanThumbnail);
-
       console.log('📤 Data prepared for page.tsx:', productData);
+      console.log('🔍 IMAGES BEING SENT:', productData.images);
+      console.log('🔍 THUMBNAIL BEING SENT:', productData.thumbnail);
+      console.log('🔍 IMAGES COUNT:', productData.images?.length);
 
           // پاک کردن فایل‌های انتخاب شده بعد از موفقیت
           setFiles([]);
