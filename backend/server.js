@@ -144,11 +144,20 @@ const fixImageUrls = (product) => {
         return baseUrl + img;
       }
       return img;
-    });
+    }).filter(img => img && img.trim() !== ''); // حذف عکس‌های خالی
+  } else {
+    // ✨ اگر images موجود نیست، از thumbnail استفاده کن
+    product.images = product.thumbnail ? [product.thumbnail] : [];
+  }
+
+  // ✨ اطمینان از وجود حداقل یک عکس در آرایه
+  if (product.images.length === 0 && product.thumbnail) {
+    product.images = [product.thumbnail];
   }
 
   return product;
 };
+
 
 // ✨ API تکی آپلود - اصلاح شده
 app.post('/api/upload', upload.single('image'), (req, res) => {
@@ -263,7 +272,7 @@ app.post('/api/products', async (req, res) => {
           name,
           Number(price),
           Number(stock),
-          slug || `${name.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`,
+          slug || `${(name || 'product').toLowerCase().replace(/\s+/g, '-')}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           published !== false,
           finalImages, // ✨ آرایه کامل عکس‌ها
           finalThumbnail, // ✨ آخرین عکس به عنوان thumbnail
@@ -1326,7 +1335,93 @@ app.get('/api/address/user', async (req, res) => {
   }
 });
 
+// ✨ API تست گالری - اضافه کنید به server.js
+app.get('/api/test-gallery/:id', async (req, res) => {
+  const { id } = req.params;
 
+  try {
+    console.log('🖼️ Testing gallery for product ID:', id);
+
+    const result = await pool.query('SELECT * FROM products WHERE id = $1', [id]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'محصول پیدا نشد' });
+    }
+
+    let product = result.rows[0];
+
+    console.log('📸 Raw product data:');
+    console.log('- thumbnail:', product.thumbnail);
+    console.log('- images:', product.images);
+    console.log('- images type:', Array.isArray(product.images) ? 'array' : typeof product.images);
+    console.log('- images length:', Array.isArray(product.images) ? product.images.length : 'not array');
+
+    // اعمال fixImageUrls
+    product = fixImageUrls(product);
+
+    console.log('📸 After fixImageUrls:');
+    console.log('- thumbnail:', product.thumbnail);
+    console.log('- images:', product.images);
+    console.log('- images length:', product.images ? product.images.length : 'null');
+
+    res.json({
+      productId: product.id,
+      productName: product.name,
+      thumbnail: product.thumbnail,
+      images: product.images,
+      imagesCount: product.images ? product.images.length : 0,
+      debug: {
+        rawThumbnail: result.rows[0].thumbnail,
+        rawImages: result.rows[0].images,
+        fixedThumbnail: product.thumbnail,
+        fixedImages: product.images
+      }
+    });
+
+  } catch (err) {
+    console.error('❌ Gallery test error:', err);
+    res.status(500).json({ message: 'خطا در تست گالری' });
+  }
+});
+
+// ✨ API برای اضافه کردن عکس‌های تست به محصول
+app.get('/api/add-test-images/:id', async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    // عکس‌های تست
+    const testImages = [
+      '/assets/images/products/Fashion/Shoes/1.Nike.png',
+      '/assets/images/products/Fashion/Shoes/2.PumaBlack.png',
+      '/assets/images/products/Fashion/Shoes/3.ADIDAS2019.png',
+      '/assets/images/products/Electronics/1.Moto.png',
+      '/assets/images/products/Electronics/2.Honor.png'
+    ];
+
+    const result = await pool.query(
+      'UPDATE products SET images = $1 WHERE id = $2 RETURNING *',
+      [testImages, id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'محصول پیدا نشد' });
+    }
+
+    console.log('✅ Test images added to product:', id);
+    console.log('📸 Images:', testImages);
+
+    res.json({
+      message: 'عکس‌های تست با موفقیت اضافه شد',
+      productId: id,
+      imagesAdded: testImages.length,
+      images: testImages
+    });
+
+  } catch (err) {
+    console.error('❌ Error adding test images:', err);
+    res.status(500).json({ message: 'خطا در اضافه کردن عکس‌های تست' });
+  }
+});
 
 // --- شروع سرور ---
 app.listen(port, () => {

@@ -13,6 +13,12 @@ const nextConfig = {
         port: '4000',
         pathname: '/**', // ✨ همه مسیرها: /uploads/**, /assets/**, etc
       },
+      // ✨ اضافه شد: برای ui-lib.com
+      {
+        protocol: 'https',
+        hostname: 'ui-lib.com',
+        pathname: '/**',
+      },
       // برای عکس‌های موقت و جایگزین (placeholder)
       {
         protocol: 'https',
@@ -26,8 +32,8 @@ const nextConfig = {
         pathname: '/**',
       },
     ],
-    // ✨ برای سازگاری بیشتر
-    domains: ['localhost'],
+    // ✨ برای سازگاری بیشتر - ui-lib.com اضافه شد
+    domains: ['localhost', 'ui-lib.com'],
     dangerouslyAllowSVG: true,
     contentDispositionType: 'attachment',
     contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",

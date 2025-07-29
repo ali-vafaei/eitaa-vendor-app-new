@@ -66,6 +66,24 @@ export default function ProductForm({ productToEdit, onSave, onCancel, isSubmitt
       console.log('📸 Loaded existing images:', images);
     }
   }, [productToEdit]);
+    // ✨ تابع تولید slug منحصر به فرد - اضافه کن قبل از handleFormSubmit
+
+      const generateUniqueSlug = (name: string): string => {
+      if (!name || name.trim() === '') {
+        return `product-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+      }
+      const baseSlug = name
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9\s-]/g, '') // حذف کاراکترهای خاص
+        .replace(/\s+/g, '-')         // جایگزینی space با -
+        .replace(/-+/g, '-')          // حذف - های تکراری
+        .replace(/^-|-$/g, '');       // حذف - از ابتدا و انتها
+
+      const timestamp = Date.now();
+      const randomNum = Math.random().toString(36).substr(2, 5);
+      return `${baseSlug || 'product'}-${timestamp}-${randomNum}`;
+    };
 
   const handleFormSubmit = async (values: any, { setSubmitting }: any) => {
     // ✨ جلوگیری از double submit
@@ -214,7 +232,7 @@ if (files && files.length > 0) {
         stock: Number(values.stock),
         brand: values.brand,
         categories: Array.isArray(values.category) ? values.category : [],
-        slug: values.slug || values.name.toLowerCase().replace(/\s+/g, '-'),
+        slug: values.slug || generateUniqueSlug(values.name),
         thumbnail: cleanThumbnail, // ✨ آخرین عکس به عنوان thumbnail
         images: cleanImageUrls, // ✨ آرایه کامل شامل همه عکس‌ها
         published: values.published !== false,
@@ -225,59 +243,39 @@ if (files && files.length > 0) {
       console.log('📤 Clean images count:', cleanImageUrls.length);
       console.log('📤 Clean thumbnail:', cleanThumbnail);
 
-      const apiUrl = isEditing
-        ? `http://localhost:4000/api/products/${productToEdit.id}`
-        : 'http://localhost:4000/api/products';
-      const method = isEditing ? 'PUT' : 'POST';
+      console.log('📤 Data prepared for page.tsx:', productData);
 
-      const response = await fetch(apiUrl, {
-        method: method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(productData),
-      });
+          // پاک کردن فایل‌های انتخاب شده بعد از موفقیت
+          setFiles([]);
+          setExistingImages([]);
 
-      console.log('📡 Product save response status:', response.status);
+          // ✨ اضافه کردن این دو خط:
+            setIsSubmittingForm(false);
+            setSubmitting(false);
 
-      const data = await response.json();
-      console.log('📡 Product save result:', data);
-      console.log('✅ Product saved successfully with images:', {
-      productId: data.id,
-      thumbnail: data.thumbnail,
-      totalImages: data.images ? data.images.length : 0,
-      imagesList: data.images
-     });
+          // فراخوانی callback
+            setFiles([]);
+            setExistingImages([]);
 
-      if (!response.ok) {
-        throw new Error(data.message || 'خطا در ذخیره محصول');
-      }
+            // ✅ فقط داده‌ها را به page.tsx بفرست، خودت محصول را ذخیره نکن
+            onSave({
+              ...values,
+              images: cleanImageUrls,
+              thumbnail: cleanThumbnail,
+              // اطلاعات اضافی برای صفحه
+              uploadedImageUrls: cleanImageUrls,
+              finalThumbnail: cleanThumbnail
+            });
+        return;
 
-      console.log('✅ Product saved successfully with images:', {
-        productId: data.id,
-        thumbnail: data.thumbnail,
-        totalImages: data.images ? data.images.length : 0,
-        imagesList: data.images
-      });
-
-      // پاک کردن فایل‌های انتخاب شده بعد از موفقیت
-      setFiles([]);
-      setExistingImages([]);
-
-      // ✨ اضافه کردن این دو خط:
-        setIsSubmittingForm(false);
-        setSubmitting(false);
-
-      // فراخوانی callback
-      onSave(data);
-      return;
-
-    } catch (error: any) {
-      console.error('❌ Error in form submit:', error);
-      setApiError(error.message);
-    } finally {
-      setSubmitting(false);
-      setIsSubmittingForm(false);
-    }
-  };
+        } catch (error: any) {
+          console.error('❌ Error in form submit:', error);
+          setApiError(error.message);
+        } finally {
+          setSubmitting(false);
+          setIsSubmittingForm(false);
+        }
+      };
 
   // ✨ مدیریت آپلود فایل‌های جدید (اضافه شدن، نه جایگزین شدن)
   const handleChangeDropZone = (newFiles: File[]) => {

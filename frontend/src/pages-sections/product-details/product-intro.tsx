@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FC, useState } from "react";
+import React, { FC, useState, useMemo } from "react";
 import Box from "@mui/material/Box";
 import Chip from "@mui/material/Chip";
 import Grid from "@mui/material/Grid";
@@ -49,27 +49,73 @@ export default function ProductIntro({ product }: Props) {
   });
 
   // ✨ تابع کمکی برای تبدیل آدرس نسبی به کامل
-  const getFullImageUrl = (imageUrl: string) => {
-    if (!imageUrl) return "/assets/images/products/placeholder.png";
-    if (imageUrl.startsWith('http')) return imageUrl;
+  const getFullImageUrl = (imageUrl: string | null | undefined): string => {
+    if (!imageUrl || imageUrl.trim() === '') {
+      return "/assets/images/products/placeholder.png";
+    }
+
+    // اگر آدرس کامل است
+    if (imageUrl.startsWith('http') || imageUrl.startsWith('//')) {
+      return imageUrl;
+    }
+
+    // اگر آدرس آپلود شده است
     if (imageUrl.startsWith('/uploads')) {
       return `http://localhost:4000${imageUrl}`;
     }
+
+    // اگر آدرس assets است
+    if (imageUrl.startsWith('/assets')) {
+      return imageUrl;
+    }
+
+    // سایر حالات
     return imageUrl;
   };
 
-  // ✨✨✨ راه حل نهایی و ضدخطا اینجاست ✨✨✨
-  // 1. یک لیست عکس امن می‌سازیم که تضمین شده یک آرایه است.
-  const imageList =
-    (images && Array.isArray(images) && images.length > 0)
-      ? images.map(img => getFullImageUrl(img)) // ✨ آدرس کامل برای هر عکس
-      : thumbnail
-      ? [getFullImageUrl(thumbnail)] // ✨ آدرس کامل برای thumbnail
-      : ["/assets/images/products/placeholder.png"]; // یک عکس جایگزین در صورت نبود هیچ عکسی
+  // ✨ لیست تصاویر معتبر و امن
+  const validImageList = useMemo(() => {
+    console.log('🖼️ Processing product images:', {
+      title,
+      thumbnail,
+      images: images,
+      imagesType: Array.isArray(images) ? 'array' : typeof images,
+      imagesLength: Array.isArray(images) ? images.length : 'not array'
+    });
 
-  // 2. اطمینان حاصل می‌کنیم که ایندکس عکس انتخابی معتبر است.
-  const safeSelectedImage = Math.min(selectedImage, imageList.length - 1);
-  const selectedImageUrl = imageList[safeSelectedImage];
+    let imageUrls: string[] = [];
+
+    // اولویت ۱: استفاده از آرایه images اگر موجود است
+    if (Array.isArray(images) && images.length > 0) {
+      imageUrls = images
+        .filter(img => img && typeof img === 'string' && img.trim() !== '')
+        .map(img => getFullImageUrl(img));
+      console.log('✅ Using images array:', imageUrls.length, 'items');
+    }
+
+    // اولویت ۲: اگر آرایه images خالی است، از thumbnail استفاده کن
+    if (imageUrls.length === 0 && thumbnail) {
+      imageUrls = [getFullImageUrl(thumbnail)];
+      console.log('✅ Using thumbnail as single image:', thumbnail);
+    }
+
+    // اولویت ۳: اگر هیچی نبود، عکس پیش‌فرض
+    if (imageUrls.length === 0) {
+      const fallbackUrl = `https://via.placeholder.com/300x300.png?text=${encodeURIComponent(title)}`;
+      imageUrls = [fallbackUrl];
+      console.log('⚠️ Using fallback placeholder image');
+    }
+
+    console.log('📸 Final image list:', imageUrls);
+    return imageUrls;
+  }, [images, thumbnail, title]);
+
+  // ✨ اطمینان از معتبر بودن ایندکس انتخاب شده
+  const safeSelectedIndex = Math.max(0, Math.min(selectedImage, validImageList.length - 1));
+  const currentImageUrl = validImageList[safeSelectedIndex];
+
+  // ✨ چک کردن آیا بیش از یک عکس داریم برای نمایش گالری
+  const hasMultipleImages = validImageList.length > 1;
 
   // HANDLE CHANGE TYPE AND OPTIONS
   const handleChangeVariant = (variantName: string, value: string) => () => {
@@ -83,76 +129,102 @@ export default function ProductIntro({ product }: Props) {
   const cartItem = state.cart.find((item) => item.id === id);
 
   // HANDLE SELECT IMAGE
-  const handleImageClick = (ind: number) => () => setSelectedImage(ind);
+  const handleImageClick = (ind: number) => () => {
+    console.log('🖱️ Image clicked:', ind, 'of', validImageList.length);
+    setSelectedImage(ind);
+  };
 
   // HANDLE CHANGE CART
   const handleCartAmountChange = (amount: number) => () => {
     dispatch({
       type: "CHANGE_CART_AMOUNT",
-      payload: { price, qty: amount, name: title, imgUrl: getFullImageUrl(thumbnail), id, slug }, // ✨ آدرس کامل
+      payload: {
+        price,
+        qty: amount,
+        name: title,
+        imgUrl: getFullImageUrl(thumbnail),
+        id,
+        slug
+      },
     });
   };
 
-  // ✨ دیباگ: بررسی آدرس عکس‌ها
-  console.log('🖼️ ProductIntro Debug:', {
-    thumbnail,
-    images,
-    imageList,
-    selectedImageUrl
-  });
+  // ✨ Error handler برای عکس‌ها
+  const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    console.error('❌ Image load failed:', e.currentTarget.src);
+    e.currentTarget.src = "/assets/images/products/placeholder.png";
+  };
 
   return (
     <Box width="100%">
       <Grid container spacing={3} justifyContent="space-around">
-        {/* IMAGE GALLERY AREA */}
+        {/* =============== IMAGE GALLERY AREA =============== */}
         <Grid item md={6} xs={12} alignItems="center">
-          <FlexBox borderRadius={3} overflow="hidden" justifyContent="center" mb={6}>
+          {/* عکس اصلی */}
+          <FlexBox
+            borderRadius={3}
+            overflow="hidden"
+            justifyContent="center"
+            mb={hasMultipleImages ? 6 : 3}
+            sx={{ backgroundColor: 'grey.100' }}
+          >
             <LazyImage
               alt={title}
               width={300}
               height={300}
               loading="eager"
-              src={selectedImageUrl} // 3. از URL امن استفاده می‌کنیم
+              src={currentImageUrl}
               sx={{ objectFit: "contain" }}
-              onError={(e) => {
-                console.error('❌ Image load error:', selectedImageUrl);
-                // در صورت خطا، عکس پیش‌فرض نمایش بده
-                e.currentTarget.src = "/assets/images/products/placeholder.png";
-              }}
+              onError={handleImageError}
             />
           </FlexBox>
 
-          <FlexBox overflow="auto">
-            {imageList.map((url, ind) => ( // 4. از لیست عکس امن برای map استفاده می‌کنیم
-              <FlexRowCenter
-                key={ind}
-                width={64}
-                height={64}
-                minWidth={64}
-                bgcolor="white"
-                border="1px solid"
-                borderRadius="10px"
-                ml={ind === 0 ? "auto" : 0}
-                style={{ cursor: "pointer" }}
-                onClick={handleImageClick(ind)}
-                mr={ind === imageList.length - 1 ? "auto" : "10px"}
-                borderColor={selectedImage === ind ? "primary.main" : "grey.400"}>
-                <Avatar
-                  alt="product"
-                  src={url}
-                  variant="square"
-                  sx={{ height: 40 }}
-                  onError={(e) => {
-                    console.error('❌ Thumbnail error:', url);
-                    e.currentTarget.src = "/assets/images/products/placeholder.png";
+          {/* تصاویر کوچک گالری - فقط اگر بیش از یک عکس داریم */}
+          {hasMultipleImages && (
+            <FlexBox overflow="auto" gap={1}>
+              {validImageList.map((imageUrl, index) => (
+                <FlexRowCenter
+                  key={`gallery-${index}`}
+                  width={64}
+                  height={64}
+                  minWidth={64}
+                  bgcolor="white"
+                  border="2px solid"
+                  borderRadius="10px"
+                  style={{ cursor: "pointer" }}
+                  onClick={handleImageClick(index)}
+                  borderColor={safeSelectedIndex === index ? "primary.main" : "grey.300"}
+                  sx={{
+                    transition: 'all 0.2s ease',
+                    '&:hover': {
+                      borderColor: 'primary.main',
+                      transform: 'scale(1.05)'
+                    }
                   }}
-                />
-              </FlexRowCenter>
-            ))}
-          </FlexBox>
+                >
+                  <Avatar
+                    alt={`${title} - تصویر ${index + 1}`}
+                    src={imageUrl}
+                    variant="square"
+                    sx={{ height: 56, width: 56 }}
+                    onError={handleImageError}
+                  />
+                </FlexRowCenter>
+              ))}
+            </FlexBox>
+          )}
+
+          {/* نمایش تعداد عکس‌ها */}
+          {hasMultipleImages && (
+            <Box mt={2} textAlign="center">
+              <small style={{ color: '#666' }}>
+                عکس {safeSelectedIndex + 1} از {validImageList.length}
+              </small>
+            </Box>
+          )}
         </Grid>
 
-        {/* PRODUCT INFO AREA */}
+        {/* =============== PRODUCT INFO AREA =============== */}
         <Grid item md={6} xs={12} alignItems="center">
           {/* PRODUCT NAME */}
           <H1 mb={1}>{title}</H1>
@@ -160,13 +232,13 @@ export default function ProductIntro({ product }: Props) {
           {/* PRODUCT BRAND */}
           <FlexBox alignItems="center" mb={1}>
             <div>Brand: </div>
-            <H6>{brand || "N/A"}</H6>
+            <H6 ml={1}>{brand || "نامشخص"}</H6>
           </FlexBox>
 
           {/* PRODUCT RATING */}
           <FlexBox alignItems="center" gap={1} mb={2}>
             <Box lineHeight="1">Rated:</Box>
-            <Rating color="warn" value={rating || 0} readOnly />
+            <Rating color="warn" value={rating || 0} readOnly size="small" />
             <H6 lineHeight="1">(50)</H6>
           </FlexBox>
 
@@ -174,7 +246,6 @@ export default function ProductIntro({ product }: Props) {
           {productVariants.map((variant) => (
             <Box key={variant.id} mb={2}>
               <H6 mb={1}>{variant.title}</H6>
-
               {variant.values.map(({ id, value }) => (
                 <Chip
                   key={id}
