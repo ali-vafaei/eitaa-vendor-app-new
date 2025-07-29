@@ -27,8 +27,8 @@ const products = cache(async (): Promise<Product[]> => {
 });
 
 const category = cache(async (): Promise<Category[]> => {
-  // فعلاً خالی - می‌توانید بعداً API کتگوری اضافه کنید
-  return [];
+  const response = await axios.get("http://localhost:4000/api/categories");
+  return response.data;
 });
 
 const brands = cache(async (): Promise<Brand[]> => {

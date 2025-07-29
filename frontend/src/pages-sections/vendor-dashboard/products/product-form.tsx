@@ -42,6 +42,10 @@ export default function ProductForm({ productToEdit, onSave, onCancel, isSubmitt
   const [existingImages, setExistingImages] = useState<string[]>([]);
   const [isSubmittingForm, setIsSubmittingForm] = useState(false);
 
+  // ✨ State برای نگهداری لیست کتگوری‌ها
+  const [categories, setCategories] = useState<any[]>([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(true);
+
   const INITIAL_VALUES = {
     name: productToEdit?.name || "",
     brand: productToEdit?.brand || "",
@@ -55,6 +59,39 @@ export default function ProductForm({ productToEdit, onSave, onCancel, isSubmitt
     published: productToEdit?.published ?? true,
   };
 
+  // ✨ دریافت لیست کتگوری‌ها از بک‌اند
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        setCategoriesLoading(true);
+        const response = await fetch('http://localhost:4000/api/categories');
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch categories');
+        }
+
+        const data = await response.json();
+        console.log('📂 Categories loaded:', data);
+        setCategories(data || []);
+      } catch (error) {
+        console.error('❌ Error fetching categories:', error);
+        setCategories([]);
+        // در صورت خطا، از کتگوری‌های پیش‌فرض استفاده کن
+        setCategories([
+          { id: 'electronics', name: 'Electronics' },
+          { id: 'fashion', name: 'Fashion' },
+          { id: 'beauty', name: 'Beauty' },
+          { id: 'sports', name: 'Sports' },
+          { id: 'books', name: 'Books' }
+        ]);
+      } finally {
+        setCategoriesLoading(false);
+      }
+    };
+
+    fetchCategories();
+  }, []);
+
   // ✨ بارگذاری عکس‌های موجود هنگام ویرایش
   useEffect(() => {
     if (productToEdit && productToEdit.images) {
@@ -66,24 +103,24 @@ export default function ProductForm({ productToEdit, onSave, onCancel, isSubmitt
       console.log('📸 Loaded existing images:', images);
     }
   }, [productToEdit]);
-    // ✨ تابع تولید slug منحصر به فرد - اضافه کن قبل از handleFormSubmit
 
-      const generateUniqueSlug = (name: string): string => {
-      if (!name || name.trim() === '') {
-        return `product-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
-      }
-      const baseSlug = name
-        .toLowerCase()
-        .trim()
-        .replace(/[^a-z0-9\s-]/g, '') // حذف کاراکترهای خاص
-        .replace(/\s+/g, '-')         // جایگزینی space با -
-        .replace(/-+/g, '-')          // حذف - های تکراری
-        .replace(/^-|-$/g, '');       // حذف - از ابتدا و انتها
+  // ✨ تابع تولید slug منحصر به فرد
+  const generateUniqueSlug = (name: string): string => {
+    if (!name || name.trim() === '') {
+      return `product-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+    }
+    const baseSlug = name
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9\s-]/g, '') // حذف کاراکترهای خاص
+      .replace(/\s+/g, '-')         // جایگزینی space با -
+      .replace(/-+/g, '-')          // حذف - های تکراری
+      .replace(/^-|-$/g, '');       // حذف - از ابتدا و انتها
 
-      const timestamp = Date.now();
-      const randomNum = Math.random().toString(36).substr(2, 5);
-      return `${baseSlug || 'product'}-${timestamp}-${randomNum}`;
-    };
+    const timestamp = Date.now();
+    const randomNum = Math.random().toString(36).substr(2, 5);
+    return `${baseSlug || 'product'}-${timestamp}-${randomNum}`;
+  };
 
   const handleFormSubmit = async (values: any, { setSubmitting }: any) => {
     // ✨ جلوگیری از double submit
@@ -116,33 +153,33 @@ export default function ProductForm({ productToEdit, onSave, onCancel, isSubmitt
       }
 
       // مرحله ۲: آپلود فایل‌های جدید (اگر وجود دارند)
-if (files && files.length > 0) {
-  console.log(`🚀 Uploading ${files.length} new image files...`);
-  console.log('📁 Files to upload:', files.map(f => f.name));
+      if (files && files.length > 0) {
+        console.log(`🚀 Uploading ${files.length} new image files...`);
+        console.log('📁 Files to upload:', files.map(f => f.name));
 
-  const formData = new FormData();
-  files.forEach((file, index) => {
-    formData.append('images', file);
-    console.log(`📤 Adding file ${index + 1}: ${file.name} (${file.size} bytes)`);
-  });
+        const formData = new FormData();
+        files.forEach((file, index) => {
+          formData.append('images', file);
+          console.log(`📤 Adding file ${index + 1}: ${file.name} (${file.size} bytes)`);
+        });
 
-  console.log('📤 FormData created, sending to backend...');
+        console.log('📤 FormData created, sending to backend...');
 
-  const uploadResponse = await fetch('http://localhost:4000/api/upload-multiple', {
-    method: 'POST',
-    body: formData,
-  });
+        const uploadResponse = await fetch('https://localhost:4000/api/upload-multiple', {
+          method: 'POST',
+          body: formData,
+        });
 
-  console.log('📡 Upload response status:', uploadResponse.status);
+        console.log('📡 Upload response status:', uploadResponse.status);
 
-  const uploadResult = await uploadResponse.json();
-  console.log('📡 Upload result:', uploadResult);
+        const uploadResult = await uploadResponse.json();
+        console.log('📡 Upload result:', uploadResult);
 
-  if (!uploadResponse.ok) {
-    throw new Error(uploadResult.error || 'خطا در آپلود عکس‌ها');
-  }
+        if (!uploadResponse.ok) {
+          throw new Error(uploadResult.error || 'خطا در آپلود عکس‌ها');
+        }
 
-      // اضافه کردن URL های جدید به متغیر و لیست کل
+        // اضافه کردن URL های جدید به متغیر و لیست کل
         newImageUrls = uploadResult.imageUrls || [];
         allImageUrls = [...allImageUrls, ...newImageUrls];
 
@@ -158,67 +195,67 @@ if (files && files.length > 0) {
         console.log('📸 Added manual URL to images');
       }
 
+      // مرحله ۴: تعیین thumbnail نهایی - منطق اصلاح شده
+      console.log('🎯 Determining thumbnail logic...');
+      console.log('📝 Form thumbnail field:', values.thumbnail);
+      console.log('📁 New files uploaded:', files.length);
+      console.log('🆕 New image URLs count:', newImageUrls.length);
+      console.log('📸 Existing images:', existingImages.length);
 
-        // مرحله ۴: تعیین thumbnail نهایی - منطق اصلاح شده
-        console.log('🎯 Determining thumbnail logic...');
-        console.log('📝 Form thumbnail field:', values.thumbnail);
-        console.log('📁 New files uploaded:', files.length);
-        console.log('🆕 New image URLs count:', newImageUrls.length);
-        console.log('📸 Existing images:', existingImages.length);
+      if (newImageUrls.length > 0) {
+        // ✨ اولویت اول: اگر عکس جدید آپلود شده، آخرین عکس جدید رو thumbnail کن
+        thumbnailUrl = newImageUrls[newImageUrls.length - 1]; // آخرین عکس جدید
+        console.log('🆕 Using latest uploaded image as thumbnail:', thumbnailUrl);
+        console.log('🎯 Selected from', newImageUrls.length, 'new images');
 
-        if (newImageUrls.length > 0) {
-          // ✨ اولویت اول: اگر عکس جدید آپلود شده، آخرین عکس جدید رو thumbnail کن
-          thumbnailUrl = newImageUrls[newImageUrls.length - 1]; // آخرین عکس جدید
-          console.log('🆕 Using latest uploaded image as thumbnail:', thumbnailUrl);
-          console.log('🎯 Selected from', newImageUrls.length, 'new images');
+      } else if (values.thumbnail && values.thumbnail.trim() !== '' && !values.thumbnail.includes('placeholder')) {
+        // اولویت دوم: اگر کاربر دستی thumbnail معتبر وارد کرده
+        thumbnailUrl = values.thumbnail;
+        console.log('✅ Using manual thumbnail:', thumbnailUrl);
 
-        } else if (values.thumbnail && values.thumbnail.trim() !== '' && !values.thumbnail.includes('placeholder')) {
-          // اولویت دوم: اگر کاربر دستی thumbnail معتبر وارد کرده
-          thumbnailUrl = values.thumbnail;
-          console.log('✅ Using manual thumbnail:', thumbnailUrl);
+      } else if (existingImages.length > 0) {
+        // اولویت سوم: اگر هیچ عکس جدیدی آپلود نشده، از آخرین عکس موجود استفاده کن
+        thumbnailUrl = existingImages[existingImages.length - 1]; // آخرین عکس موجود
+        console.log('📸 Using latest existing image as thumbnail:', thumbnailUrl);
 
-        } else if (existingImages.length > 0) {
-          // اولویت سوم: اگر هیچ عکس جدیدی آپلود نشده، از آخرین عکس موجود استفاده کن
-          thumbnailUrl = existingImages[existingImages.length - 1]; // آخرین عکس موجود
-          console.log('📸 Using latest existing image as thumbnail:', thumbnailUrl);
+      } else if (allImageUrls.length > 0) {
+        // اولویت چهارم: fallback - از آخرین عکس در کل لیست استفاده کن
+        thumbnailUrl = allImageUrls[allImageUrls.length - 1];
+        console.log('🔄 Using latest from all images as thumbnail:', thumbnailUrl);
 
-        } else if (allImageUrls.length > 0) {
-          // اولویت چهارم: fallback - از آخرین عکس در کل لیست استفاده کن
-          thumbnailUrl = allImageUrls[allImageUrls.length - 1];
-          console.log('🔄 Using latest from all images as thumbnail:', thumbnailUrl);
+      } else if (isEditing && productToEdit?.thumbnail && !productToEdit.thumbnail.includes('placeholder')) {
+        // اولویت پنجم: در نهایت از thumbnail قدیمی استفاده کن (اگر placeholder نباشه)
+        thumbnailUrl = productToEdit.thumbnail;
+        console.log('🔙 Using existing product thumbnail:', thumbnailUrl);
 
-        } else if (isEditing && productToEdit?.thumbnail && !productToEdit.thumbnail.includes('placeholder')) {
-          // اولویت پنجم: در نهایت از thumbnail قدیمی استفاده کن (اگر placeholder نباشه)
-          thumbnailUrl = productToEdit.thumbnail;
-          console.log('🔙 Using existing product thumbnail:', thumbnailUrl);
+      } else {
+        // آخرین گزینه: اگر هیچکدوم موجود نبود، یه thumbnail پیش‌فرض بساز
+        thumbnailUrl = `https://via.placeholder.com/300.png?text=${encodeURIComponent(values.name)}`;
+        console.log('🎭 Using placeholder thumbnail:', thumbnailUrl);
+      }
 
-        } else {
-          // آخرین گزینه: اگر هیچکدوم موجود نبود، یه thumbnail پیش‌فرض بساز
-          thumbnailUrl = `https://via.placeholder.com/300.png?text=${encodeURIComponent(values.name)}`;
-          console.log('🎭 Using placeholder thumbnail:', thumbnailUrl);
-        }
+      console.log('✅ Final thumbnail selected:', thumbnailUrl);
 
-        console.log('✅ Final thumbnail selected:', thumbnailUrl);
+      // بررسی وجود حداقل یک عکس
+      if (!thumbnailUrl && allImageUrls.length === 0) {
+        throw new Error('لطفاً حداقل یک عکس برای محصول انتخاب یا آدرس آن را وارد کنید.');
+      }
 
-        // بررسی وجود حداقل یک عکس
-        if (!thumbnailUrl && allImageUrls.length === 0) {
-          throw new Error('لطفاً حداقل یک عکس برای محصول انتخاب یا آدرس آن را وارد کنید.');
-        }
       console.log('📸 Final processing result:');
       console.log('📸 Thumbnail:', thumbnailUrl);
       console.log('📸 Total images:', allImageUrls.length);
       console.log('📸 All image URLs:', allImageUrls);
 
-      // ✨ آماده‌سازی داده‌ها - URL ها را بدون http://localhost:4000 ذخیره می‌کنیم
+      // ✨ آماده‌سازی داده‌ها - URL ها را بدون https://localhost:4000 ذخیره می‌کنیم
       const cleanImageUrls = allImageUrls.map(url => {
         if (typeof url === 'string') {
-          return url.replace('http://localhost:4000', '');
+          return url.replace('https://localhost:4000', '');
         }
         return url;
       });
 
       const cleanThumbnail = thumbnailUrl ?
-        (typeof thumbnailUrl === 'string' ? thumbnailUrl.replace('http://localhost:4000', '') : thumbnailUrl)
+        (typeof thumbnailUrl === 'string' ? thumbnailUrl.replace('https://localhost:4000', '') : thumbnailUrl)
         : '';
 
       console.log('💾 Clean data preparation:');
@@ -247,37 +284,37 @@ if (files && files.length > 0) {
       console.log('🔍 THUMBNAIL BEING SENT:', productData.thumbnail);
       console.log('🔍 IMAGES COUNT:', productData.images?.length);
 
-          // پاک کردن فایل‌های انتخاب شده بعد از موفقیت
-          setFiles([]);
-          setExistingImages([]);
+      // پاک کردن فایل‌های انتخاب شده بعد از موفقیت
+      setFiles([]);
+      setExistingImages([]);
 
-          // ✨ اضافه کردن این دو خط:
-            setIsSubmittingForm(false);
-            setSubmitting(false);
+      // ✨ اضافه کردن این دو خط:
+      setIsSubmittingForm(false);
+      setSubmitting(false);
 
-          // فراخوانی callback
-            setFiles([]);
-            setExistingImages([]);
+      // فراخوانی callback
+      setFiles([]);
+      setExistingImages([]);
 
-            // ✅ فقط داده‌ها را به page.tsx بفرست، خودت محصول را ذخیره نکن
-            onSave({
-              ...values,
-              images: cleanImageUrls,
-              thumbnail: cleanThumbnail,
-              // اطلاعات اضافی برای صفحه
-              uploadedImageUrls: cleanImageUrls,
-              finalThumbnail: cleanThumbnail
-            });
-        return;
+      // ✅ فقط داده‌ها را به page.tsx بفرست، خودت محصول را ذخیره نکن
+      onSave({
+        ...values,
+        images: cleanImageUrls,
+        thumbnail: cleanThumbnail,
+        // اطلاعات اضافی برای صفحه
+        uploadedImageUrls: cleanImageUrls,
+        finalThumbnail: cleanThumbnail
+      });
+      return;
 
-        } catch (error: any) {
-          console.error('❌ Error in form submit:', error);
-          setApiError(error.message);
-        } finally {
-          setSubmitting(false);
-          setIsSubmittingForm(false);
-        }
-      };
+    } catch (error: any) {
+      console.error('❌ Error in form submit:', error);
+      setApiError(error.message);
+    } finally {
+      setSubmitting(false);
+      setIsSubmittingForm(false);
+    }
+  };
 
   // ✨ مدیریت آپلود فایل‌های جدید (اضافه شدن، نه جایگزین شدن)
   const handleChangeDropZone = (newFiles: File[]) => {
@@ -355,6 +392,7 @@ if (files && files.length > 0) {
                 />
               </Grid>
 
+              {/* ✨ فیلد کتگوری با داده‌های دینامیک از بک‌اند */}
               <Grid item sm={6} xs={12}>
                 <TextField
                   select
@@ -366,16 +404,17 @@ if (files && files.length > 0) {
                   placeholder="Category"
                   onChange={handleChange}
                   value={values.category}
-                  label="Select Category"
+                  label={categoriesLoading ? "Loading categories..." : "Select Category"}
                   SelectProps={{ multiple: true }}
                   error={Boolean(touched.category && errors.category)}
                   helperText={(touched.category && errors.category) as string}
-                  disabled={isSubmitting || externalSubmitting}>
-                  <MenuItem value="electronics">Electronics</MenuItem>
-                  <MenuItem value="fashion">Fashion</MenuItem>
-                  <MenuItem value="beauty">Beauty</MenuItem>
-                  <MenuItem value="sports">Sports</MenuItem>
-                  <MenuItem value="books">Books</MenuItem>
+                  disabled={isSubmitting || externalSubmitting || categoriesLoading}
+                >
+                  {categories.map((category) => (
+                    <MenuItem key={category.id || category.name} value={category.id || category.name}>
+                      {category.name}
+                    </MenuItem>
+                  ))}
                 </TextField>
               </Grid>
 

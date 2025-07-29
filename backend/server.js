@@ -533,6 +533,130 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
+// --- بخش مدیریت کتگوری‌ها ---
+
+// دریافت همه کتگوری‌ها
+app.get('/api/categories', async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM categories ORDER BY name ASC'
+    );
+    res.status(200).json(result.rows);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'خطا در دریافت کتگوری‌ها' });
+  }
+});
+
+// دریافت یک کتگوری با slug
+app.get('/api/categories/:slug', async (req, res) => {
+  const { slug } = req.params;
+  try {
+    const result = await pool.query(
+      'SELECT * FROM categories WHERE slug = $1',
+      [slug]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'کتگوری یافت نشد' });
+    }
+    res.status(200).json(result.rows[0]);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'خطا در دریافت کتگوری' });
+  }
+});
+
+// ایجاد کتگوری جدید
+app.post('/api/categories', async (req, res) => {
+  const { name, icon, image, parent_id, description, featured } = req.body;
+
+  if (!name) {
+    return res.status(400).json({ message: 'نام کتگوری الزامی است' });
+  }
+
+  const slug = name.toLowerCase().replace(/\s+/g, '-');
+
+  try {
+    const result = await pool.query(
+      `INSERT INTO categories (name, slug, icon, image, parent_id, description, featured) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [name, slug, icon, image, parent_id, description, featured || false]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(409).json({ message: 'این کتگوری قبلاً ثبت شده است' });
+    }
+    console.error(err.message);
+    res.status(500).json({ message: 'خطا در ایجاد کتگوری' });
+  }
+});
+
+// ویرایش کتگوری
+app.put('/api/categories/:id', async (req, res) => {
+  const { id } = req.params;
+  const { name, icon, image, parent_id, description, featured } = req.body;
+
+  if (!name) {
+    return res.status(400).json({ message: 'نام کتگوری الزامی است' });
+  }
+
+  const slug = name.toLowerCase().replace(/\s+/g, '-');
+
+  try {
+    const result = await pool.query(
+      `UPDATE categories 
+       SET name = $1, slug = $2, icon = $3, image = $4, 
+           parent_id = $5, description = $6, featured = $7,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $8 RETURNING *`,
+      [name, slug, icon, image, parent_id, description, featured, id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'کتگوری یافت نشد' });
+    }
+
+    res.status(200).json(result.rows[0]);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'خطا در ویرایش کتگوری' });
+  }
+});
+
+// حذف کتگوری
+app.delete('/api/categories/:id', async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    // ابتدا چک کنیم زیرمجموعه دارد یا نه
+    const childCheck = await pool.query(
+      'SELECT COUNT(*) FROM categories WHERE parent_id = $1',
+      [id]
+    );
+
+    if (parseInt(childCheck.rows[0].count) > 0) {
+      return res.status(400).json({
+        message: 'این کتگوری دارای زیرمجموعه است و قابل حذف نیست'
+      });
+    }
+
+    const result = await pool.query(
+      'DELETE FROM categories WHERE id = $1 RETURNING *',
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'کتگوری یافت نشد' });
+    }
+
+    res.status(200).json({ message: 'کتگوری با موفقیت حذف شد' });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'خطا در حذف کتگوری' });
+  }
+});
+
 // --- بخش مدیریت محصولات ---
 
 // دریافت محصولات منتشر شده
@@ -606,6 +730,8 @@ app.get('/api/products/drafts', async (req, res) => {
     res.status(500).json({ message: 'خطا در ارتباط با پایگاه داده' });
   }
 });
+
+
 
 // جستجو در محصولات
 app.get('/api/products/search/:query', async (req, res) => {
@@ -914,6 +1040,180 @@ app.get('/api/products/export', async (req, res) => {
     console.error(err.message);
     res.status(500).json({ message: 'خطا در تهیه بک آپ' });
   }
+});
+
+// =================================================================
+// ### اندپوینت‌های صفحه Market-1 ###
+// =================================================================
+
+// در فایل server.js یا فایل اصلی بک‌اند
+
+app.get('/api/market-1/main-carousel', (req, res) => {
+  // فعلا داده‌های ثابت را برمی‌گردانیم تا اتصال تست شود
+  // بعدا می‌توانید این داده‌ها را از دیتابیس بخوانید
+  const mainCarouselData = [
+    {
+      id: 1,
+      title: "لوازم الکترونیکی",
+      description: "تا ۳۰٪ تخفیف",
+      imgUrl: "/assets/images/carousel/banner-1.jpg",
+      buttonText: "همین حالا خرید کنید",
+      buttonLink: "/products/search/electronics"
+    },
+    {
+      id: 2,
+      title: "مد و پوشاک",
+      description: "جدیدترین‌های فصل",
+      imgUrl: "/assets/images/carousel/banner-2.jpg",
+      buttonText: "مشاهده",
+      buttonLink: "/products/search/fashion"
+    }
+  ];
+
+  res.status(200).json(mainCarouselData);
+});
+
+// در فایل server.js
+app.get('/api/market-1/flash-deals', async (req, res) => {
+  try {
+    // به جای داده ثابت، این بار محصولات واقعی که تخفیف دارند را از دیتابیس می‌خوانیم
+    const query = `
+      SELECT * FROM products 
+      WHERE discount > 0 AND published = true 
+      ORDER BY created_at DESC 
+      LIMIT 8
+    `;
+    const result = await pool.query(query);
+
+    // اگر تابع fixImageUrls را دارید، از آن استفاده کنید
+    const productsWithFixedUrls = result.rows.map(product => fixImageUrls(product));
+
+    res.status(200).json(productsWithFixedUrls);
+  } catch (err) {
+    console.error('Error fetching flash deals:', err.message);
+    res.status(500).json({ message: 'خطا در دریافت محصولات فروش ویژه' });
+  }
+});
+
+// --- محصولات برتر (بر اساس امتیاز) ---
+app.get('/api/market-1/toprated-product', async (req, res) => {
+  try {
+    const result = await pool.query("SELECT * FROM products WHERE published = true ORDER BY rating DESC LIMIT 10");
+    res.status(200).json(result.rows.map(p => fixImageUrls(p)));
+  } catch (err) { res.status(500).json({ message: 'Error fetching top-rated products' }); }
+});
+
+// --- برندهای برتر ---
+app.get('/api/market-1/toprated-brand', async (req, res) => {
+  try {
+    const result = await pool.query("SELECT brand, COUNT(*) as product_count FROM products WHERE brand IS NOT NULL AND brand != '' GROUP BY brand ORDER BY product_count DESC LIMIT 10");
+    res.status(200).json(result.rows);
+  } catch (err) { res.status(500).json({ message: 'Error fetching top-rated brands' }); }
+});
+
+// --- محصولات جدید ---
+app.get('/api/market-1/new-arrivals', async (req, res) => {
+  try {
+    const result = await pool.query("SELECT * FROM products WHERE published = true ORDER BY created_at DESC LIMIT 10");
+    res.status(200).json(result.rows.map(p => fixImageUrls(p)));
+  } catch (err) { res.status(500).json({ message: 'Error fetching new arrivals' }); }
+});
+
+// --- لیست محصولات با تخفیف زیاد ---
+app.get('/api/market-1/big-discounts', async (req, res) => {
+  try {
+    const result = await pool.query("SELECT * FROM products WHERE published = true AND discount > 20 ORDER BY discount DESC LIMIT 10");
+    res.status(200).json(result.rows.map(p => fixImageUrls(p)));
+  } catch (err) { res.status(500).json({ message: 'Error fetching big discounts' }); }
+});
+
+// --- دسته‌بندی‌های برتر ---
+app.get('/api/market-1/top-categories', async (req, res) => {
+  try {
+    const result = await pool.query("SELECT * FROM categories LIMIT 8");
+    res.status(200).json(result.rows);
+  } catch (err) { res.status(500).json({ message: 'Error fetching top categories' }); }
+});
+
+// --- دسته‌بندی‌های پایین صفحه ---
+app.get('/api/market-1/bottom-categories', async (req, res) => {
+  try {
+    const result = await pool.query("SELECT * FROM categories WHERE parent_id IS NOT NULL LIMIT 8");
+    res.status(200).json(result.rows);
+  } catch (err) { res.status(500).json({ message: 'Error fetching bottom categories' }); }
+});
+
+
+// --- بخش‌های خاص (ماشین، موبایل و ...) ---
+// برای این بخش‌ها، فرض می‌کنیم از دسته‌بندی‌ها برای فیلتر کردن استفاده می‌کنیم.
+
+app.get('/api/market-1/car-list', async (req, res) => {
+  try {
+    const result = await pool.query("SELECT * FROM products WHERE 'Cars' = ANY(categories) AND published = true LIMIT 10");
+    res.status(200).json(result.rows.map(p => fixImageUrls(p)));
+  } catch (err) { res.status(500).json({ message: 'Error fetching car list' }); }
+});
+
+app.get('/api/market-1/car-brand-list', async (req, res) => {
+  try {
+    const result = await pool.query("SELECT DISTINCT brand FROM products WHERE 'Cars' = ANY(categories) AND brand IS NOT NULL LIMIT 10");
+    res.status(200).json(result.rows);
+  } catch (err) { res.status(500).json({ message: 'Error fetching car brands' }); }
+});
+
+app.get('/api/market-1/mobile-list', async (req, res) => {
+  try {
+    const result = await pool.query("SELECT * FROM products WHERE 'Mobiles' = ANY(categories) AND published = true LIMIT 10");
+    res.status(200).json(result.rows.map(p => fixImageUrls(p)));
+  } catch (err) { res.status(500).json({ message: 'Error fetching mobile list' }); }
+});
+
+app.get('/api/market-1/mobile-brand-list', async (req, res) => {
+  try {
+    const result = await pool.query("SELECT DISTINCT brand FROM products WHERE 'Mobiles' = ANY(categories) AND brand IS NOT NULL LIMIT 10");
+    res.status(200).json(result.rows);
+  } catch (err) { res.status(500).json({ message: 'Error fetching mobile brands' }); }
+});
+
+
+app.get('/api/market-1/optics-list', async (req, res) => {
+  try {
+    const result = await pool.query("SELECT * FROM products WHERE 'Optics' = ANY(categories) AND published = true LIMIT 10");
+    res.status(200).json(result.rows.map(p => fixImageUrls(p)));
+  } catch (err) { res.status(500).json({ message: 'Error fetching optics list' }); }
+});
+
+app.get('/api/market-1/optics/watch-brands', async (req, res) => {
+  try {
+    const result = await pool.query("SELECT DISTINCT brand FROM products WHERE 'Optics' = ANY(categories) AND brand IS NOT NULL LIMIT 10");
+    res.status(200).json(result.rows);
+  } catch (err) { res.status(500).json({ message: 'Error fetching optics brands' }); }
+});
+
+// --- اندپوینت‌های با داده ثابت (چون جدولشان در دیتابیس نیست) ---
+
+app.get('/api/market-1/mobile-shop-list', (req, res) => {
+    res.status(200).json(["Apple Store", "Samsung Plaza", "Mobile World", "Gadget Hub"]);
+});
+
+app.get('/api/market-1/optics/watch-shops', (req, res) => {
+    res.status(200).json(["Time Zone", "Watch Gallery", "The Horologists", "Luxury Watches"]);
+});
+
+app.get('/api/market-1/get-more-items', async (req, res) => {
+  try {
+    const result = await pool.query("SELECT * FROM products WHERE published = true ORDER BY RANDOM() LIMIT 10");
+    res.status(200).json(result.rows.map(p => fixImageUrls(p)));
+  } catch (err) { res.status(500).json({ message: 'Error fetching more items' }); }
+});
+
+app.get('/api/market-1/get-service-list', (req, res) => {
+  res.status(200).json([
+      { id: 1, icon: "Truck", title: "Fast Delivery", description: "Start from $10" },
+      { id: 2, icon: "MoneyGuarantee", title: "Money Guarantee", description: "7 Days Back" },
+      { id: 3, icon: "AlarmClock", title: "365 Days", description: "For free return" },
+      { id: 4, icon: "Payment", title: "Payment", description: "Secure system" }
+  ]);
 });
 
 // --- بخش مدیریت سفارشات ---

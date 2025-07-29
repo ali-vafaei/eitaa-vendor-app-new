@@ -35,7 +35,31 @@ export default function CategoryForm(props: Props) {
     featured: false
   };
 
-  const handleFormSubmit = () => {};
+  const handleFormSubmit = async (values: any) => {
+  try {
+    const formData = {
+      name: values.name,
+      parent_id: values.parent[0] || null,
+      featured: values.featured,
+      image: files[0]?.preview || null,
+      // سایر فیلدها
+    };
+
+    const response = await fetch('http://localhost:4000/api/categories', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(formData)
+    });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || 'خطا در ذخیره کتگوری');
+        }
+        console.log('دسته بندی با موفقیت ذخیره شد!');
+      } catch (error) {
+        console.error('❌ خطای دریافتی از سرور:', error.message);
+      }
+    };
 
   // HANDLE UPDATE NEW IMAGE VIA DROP ZONE
   const handleChangeDropZone = (files: File[]) => {
@@ -44,9 +68,8 @@ export default function CategoryForm(props: Props) {
   };
 
   // HANDLE DELETE UPLOAD IMAGE
-  const handleFileDelete = (file: File) => () => {
-    setFiles((files) => files.filter((item) => item.name !== file.name));
-  };
+// اضافه کردن عملیات حذف
+
 
   return (
     <Card className="p-3">

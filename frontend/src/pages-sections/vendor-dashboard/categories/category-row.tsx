@@ -33,9 +33,33 @@ export default function CategoryRow({ category, selected }: Props) {
 
   const handleNavigate = () => router.push(`/admin/categories/${slug}`);
 
+  // تابع حذف کتگوری
+  const handleDelete = async () => {
+    if (confirm('آیا از حذف این کتگوری اطمینان دارید؟')) {
+      try {
+        const response = await fetch(
+          `http://localhost:4000/api/categories/${id}`,
+          { method: 'DELETE' }
+        );
+
+        const data = await response.json();
+
+        if (response.ok) {
+          // رفرش صفحه یا حذف از لیست
+          window.location.reload();
+        } else {
+          alert(data.message || 'خطا در حذف کتگوری');
+        }
+      } catch (error) {
+        console.error('Error:', error);
+        alert('خطا در ارتباط با سرور');
+      }
+    }
+  };
+
   return (
     <StyledTableRow tabIndex={-1} role="checkbox" selected={hasSelected}>
-      <StyledTableCell align="left">#{id.split("-")[0]}</StyledTableCell>
+      <StyledTableCell align="left">#{id}</StyledTableCell>
 
       <StyledTableCell align="left">
         <CategoryWrapper>{name}</CategoryWrapper>
@@ -64,7 +88,7 @@ export default function CategoryRow({ category, selected }: Props) {
           <RemoveRedEye />
         </StyledIconButton>
 
-        <StyledIconButton>
+        <StyledIconButton onClick={handleDelete}>
           <Delete />
         </StyledIconButton>
       </StyledTableCell>

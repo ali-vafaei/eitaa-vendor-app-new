@@ -33,7 +33,7 @@ export default async function Section4() {
                       price={item.price}
                       rating={item.rating}
                       imgUrl={item.thumbnail}
-                      reviewCount={item.reviews.length}
+                      reviewCount={(item.reviews || []).length}
                     />
                   </Link>
                 </Grid>
