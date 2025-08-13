@@ -1,25 +1,32 @@
 // src/app/(layout-1)/market-1/page.tsx
 
-// ۱. ایمپورت کردن "ماشین داده‌ساز" به جای API ساختگی قبلی
-import { getPageData } from "utils/page-loader";
+// ۱. ایمپورت کردن api مخصوص خود صفحه market-1 (روش صحیح)
+import api from "utils/__api__/market-1";
+
+// ۲. ایمپورت کردن کامپوننت اصلی که ظاهر صفحه را نمایش می‌دهد
 import Market1PageView from "pages-sections/market-1/page-view/market-1";
 
 export default async function Market1() {
-  // ۲. فراخوانی ماشین فقط با یک خط کد برای گرفتن تمام داده‌های لازم
-  const { products, categories } = await getPageData("market-1");
+  // ۳. گرفتن داده‌های هر بخش به صورت جداگانه، همانطور که قالب در ابتدا طراحی شده بود
+  const mainCarouselData = await api.getMainCarousel();
+  const flashDeals = await api.getFlashDeals();
+  const topCategories = await api.getTopCategories();
+  const topRatedBrands = await api.getTopRatedBrand();
+  const newArrivals = await api.getNewArrivalList();
+  const bigDiscounts = await api.getBigDiscountList();
+  const topRatedProducts = await api.getTopRatedProduct();
+  // ... و سایر داده‌هایی که کامپوننت Market1PageView نیاز دارد
 
-  // ۳. ارسال داده‌های واقعی و پویا به کامپوننتی که ظاهر صفحه را نمایش می‌دهد
   return (
+    // ۴. ارسال تمام داده‌ها به کامپوننت اصلی نمایش
     <Market1PageView
-      products={products}
-      categories={categories}
-      // نکته: سایر داده‌هایی که قبلاً از mock api می‌آمدند (مثل اسلایدر و بنرها)
-      // را بعداً می‌توانیم به getPageData اضافه کنیم. فعلاً برای جلوگیری از خطا،
-      // آنها را یا حذف کنید یا یک آرایه خالی به آنها پاس دهید.
-      mainCarouselData={[]}
-      flashDealsData={products.slice(0, 4)} // مثال: می‌توان از همان محصولات واقعی برای بخش‌های دیگر استفاده کرد
-      newArrivalsData={products.slice(4, 8)}
-      // ... سایر پراپ‌ها
+      mainCarouselData={mainCarouselData}
+      flashDealsData={flashDeals}
+      topCategories={topCategories}
+      topRatedBrands={topRatedBrands}
+      newArrivalsData={newArrivals}
+      bigDiscountList={bigDiscounts}
+      topRatedProducts={topRatedProducts}
     />
   );
 }

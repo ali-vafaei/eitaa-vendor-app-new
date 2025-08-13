@@ -26,7 +26,7 @@ export default async function Section4() {
           <BazaarCard className="p-1">
             <Grid container spacing={4}>
               {products.map((item) => (
-                <Grid item md={3} sm={6} xs={6} key={item.title}>
+                <Grid item md={3} sm={6} xs={6} key={item.id}> {/* ✅ Corrected: Using item.id as the key */}
                   <Link href={`/products/${item.slug}`}>
                     <TopRatingProductCard
                       title={item.title}

@@ -1,4 +1,5 @@
 import { Metadata } from "next";
+import api from "utils/__api__/gift-shop";
 import GiftShopPageView from "pages-sections/gift-shop/page-view";
 
 export const metadata: Metadata = {
@@ -8,6 +9,25 @@ export const metadata: Metadata = {
   keywords: ["e-commerce", "e-commerce template", "next.js", "react"]
 };
 
-export default function GiftShop() {
-  return <GiftShopPageView />;
+export default async function GiftShop() {
+  // فراخوانی تمام داده‌های لازم برای صفحه
+  const allProducts = await api.getAllProducts();
+  const serviceList = await api.getServiceList();
+  const topCategories = await api.getTopCategories();
+  const popularProducts = await api.getPopularProducts();
+  const mainCarouselData = await api.getMainCarouselData();
+  const topSailedProducts = await api.getTopSailedProducts();
+  const categoryNavigation = await api.getCategoryNavigation();
+
+  return (
+    <GiftShopPageView
+      allProducts={allProducts}
+      serviceList={serviceList}
+      topCategories={topCategories}
+      popularProducts={popularProducts}
+      mainCarouselData={mainCarouselData}
+      topSailedProducts={topSailedProducts}
+      categoryNavigation={categoryNavigation}
+    />
+  );
 }

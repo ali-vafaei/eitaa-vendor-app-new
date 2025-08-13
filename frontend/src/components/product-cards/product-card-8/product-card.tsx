@@ -109,7 +109,7 @@ export default function ProductCard8({ product }: Props) {
         <FlexRowCenter gap={1}>
           <Rating name="read-only" value={4} readOnly sx={{ fontSize: 16 }} />
           <Small fontWeight={600} color="grey.500">
-            ({reviews.length} Reviews)
+            ({(reviews || []).length} Reviews)
           </Small>
         </FlexRowCenter>
       </Box>

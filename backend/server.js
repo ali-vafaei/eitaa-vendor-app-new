@@ -1043,6 +1043,173 @@ app.get('/api/products/export', async (req, res) => {
 });
 
 // =================================================================
+// ### اندپوینت‌های صفحه Gift-Shop ###
+// =================================================================
+
+// --- گرفتن محصولات فروشگاه کادویی (بر اساس تگ) ---
+app.get('/api/gift-shop/products', async (req, res) => {
+  const { tag } = req.query;
+
+  try {
+    let query;
+    if (tag === 'popular') {
+      // محصولات محبوب بر اساس امتیاز
+      query = "SELECT * FROM products WHERE published = true AND 'هدیه' = ANY(categories) ORDER BY rating DESC LIMIT 10";
+    } else if (tag === 'top-sailed') {
+      // محصولات پرفروش (فعلا بر اساس جدیدترین‌ها شبیه‌سازی می‌کنیم)
+      query = "SELECT * FROM products WHERE published = true AND 'هدیه' = ANY(categories) ORDER BY created_at DESC LIMIT 10";
+    } else {
+      // تمام محصولات کادویی
+      query = "SELECT * FROM products WHERE published = true AND 'هدیه' = ANY(categories) LIMIT 20";
+    }
+
+    const result = await pool.query(query);
+    res.status(200).json(result.rows.map(p => fixImageUrls(p)));
+  } catch (err) {
+    console.error(`Error fetching gift-shop products with tag ${tag}:`, err.message);
+    res.status(500).json({ message: 'Error fetching products' });
+  }
+});
+
+// --- داده‌های اسلایدر اصلی (داده ثابت) ---
+app.get('/api/gift-shop/main-carousel', (req, res) => {
+  const carouselData = [
+    { id: 1, title: "هدایای خاص", description: "برای آنهایی که دوستشان دارید", imgUrl: "/assets/images/products/gift-banner-1.png", buttonText: "مشاهده همه" },
+    { id: 2, title: "مناسبت‌ها", description: "بهترین کادو برای هر مناسبت", imgUrl: "/assets/images/products/gift-banner-2.png", buttonText: "جستجو" }
+  ];
+  res.status(200).json(carouselData);
+});
+
+// --- منوی دسته‌بندی‌ها ---
+// --- منوی دسته‌بندی‌ها (اصلاح شده برای ساختار صحیح) ---
+app.get('/api/gift-shop-navigation', async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT id, name, slug FROM categories WHERE parent_id IS NULL ORDER BY name ASC LIMIT 10"
+    );
+
+    // This is the simple list of categories from the database
+    const categories = result.rows.map(cat => ({
+      title: cat.name,
+      href: `/products/search/${cat.slug}`
+    }));
+
+    // ✅ Create the nested structure the frontend component expects
+    // We create one main navigation item and put all the categories inside its 'categoryItem' property.
+    const navigationData = [{
+      category: "دسته بندی ها",
+      categoryItem: categories
+    }];
+
+    res.status(200).json(navigationData);
+
+  } catch (err) {
+    console.error('Error fetching gift shop navigation:', err.message);
+    res.status(500).json({ message: 'Error fetching gift shop navigation' });
+  }
+});
+
+// --- لیست سرویس‌ها (داده ثابت) ---
+app.get('/api/gift-shop/service-list', (req, res) => {
+  const services = [
+    { id: 1, icon: "Truck", title: "ارسال فوری", description: "کمتر از ۳ ساعت در تهران" },
+    { id: 2, icon: "Gift", title: "کادوپیچی رایگان", description: "برای تمام سفارشات" },
+    { id: 3, icon: "Payment", title: "پرداخت امن", description: "با درگاه معتبر بانکی" }
+  ];
+  res.status(200).json(services);
+});
+
+// --- دسته‌بندی‌های برتر ---
+app.get('/api/gift-shop/top-categories', async (req, res) => {
+  try {
+    // This query correctly fetches the first 6 categories
+    const result = await pool.query("SELECT * FROM categories ORDER BY id LIMIT 6");
+    res.status(200).json(result.rows);
+  } catch (err) {
+    console.error('Error fetching top categories:', err.message);
+    res.status(500).json({ message: 'Error fetching top categories' });
+  }
+});
+
+// =================================================================
+// ### اندپوینت‌های صفحه Fashion-3 ###
+// =================================================================
+
+// --- گرفتن محصولات بر اساس تگ (ویژه یا بهترین) ---
+app.get('/api/fashion-3/products', async (req, res) => {
+  const { tag } = req.query; // خواندن تگ از آدرس ?tag=...
+
+  try {
+    let query;
+    if (tag === 'best') {
+      // برای محصولات "بهترین"، بر اساس امتیاز مرتب می‌کنیم
+      query = "SELECT * FROM products WHERE published = true AND 'fashion' = ANY(categories) ORDER BY rating DESC LIMIT 8";
+    } else {
+      // برای بقیه موارد (مثل "ویژه")، بر اساس تاریخ اضافه شدن مرتب می‌کنیم
+      query = "SELECT * FROM products WHERE published = true AND 'fashion' = ANY(categories) ORDER BY created_at DESC LIMIT 8";
+    }
+
+    const result = await pool.query(query);
+    res.status(200).json(result.rows.map(p => fixImageUrls(p)));
+
+  } catch (err) {
+    console.error(`Error fetching fashion-3 products with tag ${tag}:`, err.message);
+    res.status(500).json({ message: 'Error fetching products' });
+  }
+});
+
+// --- داده‌های اسلایدر اصلی ---
+app.get('/api/fashion-3/main-carousel', (req, res) => {
+  const carouselData = [
+    {
+      id: "1",
+      title: "فشن زنانه",
+      imgUrl: "/assets/images/products/fashion-3-banner-1.png",
+      description: "تا ۴۰٪ تخفیف برای کلکسیون جدید",
+      buttonText: "خرید کنید"
+    },
+    {
+      id: "2",
+      title: "فشن مردانه",
+      imgUrl: "/assets/images/products/fashion-3-banner-2.png",
+      description: "جدیدترین مدل‌های فصل",
+      buttonText: "مشاهده"
+    }
+  ];
+  res.status(200).json(carouselData);
+});
+
+// --- لیست سرویس‌ها ---
+app.get('/api/fashion-3/services', (req, res) => {
+  const services = [
+    { id: "1", icon: "Truck", title: "ارسال سریع", description: "برای سفارشات بالای ۱ میلیون تومان" },
+    { id: "2", icon: "MoneyGuarantee", title: "ضمانت بازگشت وجه", description: "تا ۷ روز پس از تحویل" },
+    { id: "3", icon: "Payment", title: "پرداخت امن", description: "با تمام کارت‌های عضو شتاب" }
+  ];
+  res.status(200).json(services);
+});
+
+// --- لیست مقالات وبلاگ (داده ثابت) ---
+app.get('/api/fashion-3/blogs', (req, res) => {
+  const blogs = [
+    { id: 1, title: "چطور استایل شخصی خود را پیدا کنیم؟", thumbnail: "/assets/images/products/blog-1.png", createdAt: "2024-05-10" },
+    { id: 2, title: "رنگ سال ۲۰۲۵ و تاثیر آن بر مد", thumbnail: "/assets/images/products/blog-2.png", createdAt: "2024-04-22" },
+  ];
+  res.status(200).json(blogs);
+});
+
+// --- لیست برندها ---
+app.get('/api/fashion-3/brands', async (req, res) => {
+  try {
+    const result = await pool.query("SELECT DISTINCT brand FROM products WHERE brand IS NOT NULL AND 'fashion' = ANY(categories) LIMIT 10");
+    // خروجی دیتابیس به شکل { brand: 'پوما' } است، ما آن را به فرمت مناسب تبدیل می‌کنیم
+    const formattedBrands = result.rows.map((row, i) => ({ id: i, name: row.brand, slug: row.brand, image: `/assets/images/brands/${row.brand.toLowerCase()}.png` }));
+    res.status(200).json(formattedBrands);
+  } catch (err) { res.status(500).json({ message: 'Error fetching brands' }); }
+});
+
+
+// =================================================================
 // ### اندپوینت‌های صفحه Market-1 ###
 // =================================================================
 
