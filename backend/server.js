@@ -1041,7 +1041,6 @@ app.get('/api/products/export', async (req, res) => {
     res.status(500).json({ message: 'خطا در تهیه بک آپ' });
   }
 });
-
 // =================================================================
 // ### اندپوینت‌های صفحه Gift-Shop ###
 // =================================================================
@@ -1071,17 +1070,32 @@ app.get('/api/gift-shop/products', async (req, res) => {
   }
 });
 
-// --- داده‌های اسلایدر اصلی (داده ثابت) ---
-app.get('/api/gift-shop/main-carousel', (req, res) => {
-  const carouselData = [
-    { id: 1, title: "هدایای خاص", description: "برای آنهایی که دوستشان دارید", imgUrl: "/assets/images/products/gift-banner-1.png", buttonText: "مشاهده همه" },
-    { id: 2, title: "مناسبت‌ها", description: "بهترین کادو برای هر مناسبت", imgUrl: "/assets/images/products/gift-banner-2.png", buttonText: "جستجو" }
-  ];
-  res.status(200).json(carouselData);
+// ==== API ENDPOINTS برای CAROUSEL ====
+// دریافت اسلایدهای carousel
+app.get('/api/gift-shop/main-carousel', async (req, res) => {
+    try {
+        const result = await pool.query(
+            'SELECT * FROM carousel_slides WHERE is_active = true ORDER BY sort_order ASC'
+        );
+
+        // تبدیل نام فیلدها به فرمت مورد نیاز frontend
+        const carouselData = result.rows.map(slide => ({
+            id: slide.id,
+            title: slide.title,
+            subTitle: slide.sub_title,
+            buttonText: slide.button_text,
+            buttonLink: slide.button_link,
+            imgUrl: slide.img_url
+        }));
+
+        res.status(200).json(carouselData);
+    } catch (err) {
+        console.error('خطا در دریافت carousel slides:', err.message);
+        res.status(500).json({ message: 'خطا در دریافت اسلایدها' });
+    }
 });
 
 // --- منوی دسته‌بندی‌ها ---
-// --- منوی دسته‌بندی‌ها (اصلاح شده برای ساختار صحیح) ---
 app.get('/api/gift-shop-navigation', async (req, res) => {
   try {
     const result = await pool.query(
@@ -1095,7 +1109,6 @@ app.get('/api/gift-shop-navigation', async (req, res) => {
     }));
 
     // ✅ Create the nested structure the frontend component expects
-    // We create one main navigation item and put all the categories inside its 'categoryItem' property.
     const navigationData = [{
       category: "دسته بندی ها",
       categoryItem: categories
@@ -1109,25 +1122,372 @@ app.get('/api/gift-shop-navigation', async (req, res) => {
   }
 });
 
-// --- لیست سرویس‌ها (داده ثابت) ---
-app.get('/api/gift-shop/service-list', (req, res) => {
-  const services = [
-    { id: 1, icon: "Truck", title: "ارسال فوری", description: "کمتر از ۳ ساعت در تهران" },
-    { id: 2, icon: "Gift", title: "کادوپیچی رایگان", description: "برای تمام سفارشات" },
-    { id: 3, icon: "Payment", title: "پرداخت امن", description: "با درگاه معتبر بانکی" }
-  ];
-  res.status(200).json(services);
+// ==== API ENDPOINTS برای SERVICES ====
+// --- لیست سرویس‌ها (از دیتابیس) ---
+app.get('/api/gift-shop/service-list', async (req, res) => {
+  try {
+    // اول سعی می‌کنیم از دیتابیس بخونیم
+    const result = await pool.query(
+      'SELECT * FROM services WHERE is_active = true ORDER BY sort_order ASC'
+    );
+
+    if (result.rows.length > 0) {
+      // اگر داده از دیتابیس گرفتیم
+      const serviceList = result.rows.map(service => ({
+        id: service.id,
+        icon: service.icon,
+        title: service.title,
+        description: service.description
+      }));
+      res.status(200).json(serviceList);
+    } else {
+      // اگر جدول خالی بود، از داده‌های ثابت استفاده می‌کنیم
+      const services = [
+        { id: 1, icon: "Truck", title: "ارسال فوری", description: "کمتر از ۳ ساعت در تهران" },
+        { id: 2, icon: "Gift", title: "کادوپیچی رایگان", description: "برای تمام سفارشات" },
+        { id: 3, icon: "Payment", title: "پرداخت امن", description: "با درگاه معتبر بانکی" }
+      ];
+      res.status(200).json(services);
+    }
+  } catch (err) {
+    // اگر جدول services وجود نداشت، از داده‌های ثابت استفاده می‌کنیم
+    console.log('جدول services وجود ندارد، از داده‌های ثابت استفاده می‌شود');
+    const services = [
+      { id: 1, icon: "Truck", title: "ارسال فوری", description: "کمتر از ۳ ساعت در تهران" },
+      { id: 2, icon: "Gift", title: "کادوپیچی رایگان", description: "برای تمام سفارشات" },
+      { id: 3, icon: "Payment", title: "پرداخت امن", description: "با درگاه معتبر بانکی" }
+    ];
+    res.status(200).json(services);
+  }
 });
 
-// --- دسته‌بندی‌های برتر ---
-app.get('/api/gift-shop/top-categories', async (req, res) => {
+// ==== API ENDPOINTS برای SERVICES MANAGEMENT ====
+
+// لیست تمام سرویس‌ها (برای ادمین)
+app.get('/api/admin/services', async (req, res) => {
   try {
-    // This query correctly fetches the first 6 categories
-    const result = await pool.query("SELECT * FROM categories ORDER BY id LIMIT 6");
+    const result = await pool.query('SELECT * FROM services ORDER BY sort_order ASC');
     res.status(200).json(result.rows);
   } catch (err) {
-    console.error('Error fetching top categories:', err.message);
-    res.status(500).json({ message: 'Error fetching top categories' });
+    console.error('خطا در دریافت services:', err.message);
+    res.status(500).json({ message: 'خطا در دریافت سرویس‌ها' });
+  }
+});
+
+// ایجاد سرویس جدید
+app.post('/api/admin/services', async (req, res) => {
+  const { icon, title, description, sortOrder, isActive } = req.body;
+
+  if (!icon || !title) {
+    return res.status(400).json({ message: 'آیکون و عنوان الزامی هستند.' });
+  }
+
+  try {
+    const result = await pool.query(
+      `INSERT INTO services (icon, title, description, sort_order, is_active) 
+       VALUES ($1, $2, $3, $4, $5) 
+       RETURNING *`,
+      [icon, title, description, sortOrder || 0, isActive !== false]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('خطا در ایجاد سرویس:', err.message);
+    res.status(500).json({ message: 'خطا در ایجاد سرویس جدید' });
+  }
+});
+
+// بروزرسانی سرویس
+app.put('/api/admin/services/:id', async (req, res) => {
+  const { id } = req.params;
+  const { icon, title, description, sortOrder, isActive } = req.body;
+
+  try {
+    const result = await pool.query(
+      `UPDATE services 
+       SET icon = $1, title = $2, description = $3, sort_order = $4, is_active = $5
+       WHERE id = $6 
+       RETURNING *`,
+      [icon, title, description, sortOrder, isActive, id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'سرویس پیدا نشد.' });
+    }
+
+    res.status(200).json(result.rows[0]);
+  } catch (err) {
+    console.error('خطا در بروزرسانی سرویس:', err.message);
+    res.status(500).json({ message: 'خطا در بروزرسانی سرویس' });
+  }
+});
+
+// حذف سرویس
+app.delete('/api/admin/services/:id', async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const result = await pool.query('DELETE FROM services WHERE id = $1', [id]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ message: 'سرویس پیدا نشد.' });
+    }
+
+    res.status(200).json({ message: 'سرویس با موفقیت حذف شد.' });
+  } catch (err) {
+    console.error('خطا در حذف سرویس:', err.message);
+    res.status(500).json({ message: 'خطا در حذف سرویس' });
+  }
+});
+
+// ==== API ENDPOINTS برای CATEGORIES ====
+// --- دسته‌بندی‌های برتر (بهبود یافته) ---
+app.get('/api/gift-shop/top-categories', async (req, res) => {
+  try {
+    console.log('📋 شروع دریافت categories...');
+
+    // اصلاح: از featured استفاده می‌کنیم (نه is_featured)
+    const result = await pool.query(
+      "SELECT * FROM categories WHERE featured = true ORDER BY id LIMIT 6"
+    );
+
+    console.log('📊 تعداد featured categories:', result.rows.length);
+
+    if (result.rows.length > 0) {
+      // اگر categories با featured=true پیدا کردیم
+      const categories = result.rows.map(category => ({
+        id: category.id,
+        name: category.name,
+        slug: category.slug,
+        image: category.image || '/assets/images/Gift Shop/Product 1.png',
+        description: category.description || `محصولات ${category.name}`
+      }));
+      res.status(200).json(categories);
+    } else {
+      // اگر هیچ featured category نبود، تمام categories رو برمی‌گردونیم
+      console.log('⚠️ هیچ featured category نیست، همه رو برمی‌گردونیم');
+      const fallbackResult = await pool.query("SELECT * FROM categories ORDER BY id LIMIT 6");
+
+      const categories = fallbackResult.rows.map(category => ({
+        id: category.id,
+        name: category.name,
+        slug: category.slug,
+        image: category.image || '/assets/images/Gift Shop/Product 1.png',
+        description: category.description || `محصولات ${category.name}`
+      }));
+
+      res.status(200).json(categories);
+    }
+  } catch (err) {
+    console.error('❌ خطا در categories:', err.message);
+    res.status(500).json({ message: 'Error fetching top categories', error: err.message });
+  }
+});
+
+// ایجاد دسته‌بندی جدید (برای ادمین)
+// ==== API ENDPOINTS برای CATEGORIES MANAGEMENT ====
+
+// لیست تمام دسته‌بندی‌ها (برای ادمین)
+app.get('/api/admin/categories', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT c.*, 
+             COUNT(p.id) as product_count
+      FROM categories c 
+      LEFT JOIN products p ON p.categories @> ARRAY[c.name]
+      GROUP BY c.id 
+      ORDER BY c.sort_order ASC, c.id ASC
+    `);
+    res.status(200).json(result.rows);
+  } catch (err) {
+    console.error('خطا در دریافت categories:', err.message);
+    res.status(500).json({ message: 'خطا در دریافت دسته‌بندی‌ها' });
+  }
+});
+
+// ایجاد دسته‌بندی جدید
+app.post('/api/admin/categories', async (req, res) => {
+  const { name, slug, image, description, featured, sortOrder, parentId } = req.body;
+
+  if (!name || !slug) {
+    return res.status(400).json({ message: 'نام و slug الزامی هستند.' });
+  }
+
+  try {
+    const result = await pool.query(
+      `INSERT INTO categories (name, slug, image, description, featured, sort_order, parent_id) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7) 
+       RETURNING *`,
+      [name, slug, image, description, featured || false, sortOrder || 0, parentId || null]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    if (err.code === '23505') { // unique constraint violation
+      return res.status(409).json({ message: 'این slug قبلاً استفاده شده است.' });
+    }
+    console.error('خطا در ایجاد دسته‌بندی:', err.message);
+    res.status(500).json({ message: 'خطا در ایجاد دسته‌بندی جدید' });
+  }
+});
+
+// بروزرسانی دسته‌بندی
+app.put('/api/admin/categories/:id', async (req, res) => {
+  const { id } = req.params;
+  const { name, slug, image, description, featured, sortOrder, parentId } = req.body;
+
+  try {
+    const result = await pool.query(
+      `UPDATE categories 
+       SET name = $1, slug = $2, image = $3, description = $4, 
+           featured = $5, sort_order = $6, parent_id = $7
+       WHERE id = $8 
+       RETURNING *`,
+      [name, slug, image, description, featured, sortOrder, parentId, id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'دسته‌بندی پیدا نشد.' });
+    }
+
+    res.status(200).json(result.rows[0]);
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(409).json({ message: 'این slug قبلاً استفاده شده است.' });
+    }
+    console.error('خطا در بروزرسانی دسته‌بندی:', err.message);
+    res.status(500).json({ message: 'خطا در بروزرسانی دسته‌بندی' });
+  }
+});
+
+// حذف دسته‌بندی
+app.delete('/api/admin/categories/:id', async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    // چک کن که آیا محصولی در این دسته‌بندی هست
+    const productCheck = await pool.query(
+      "SELECT COUNT(*) FROM products WHERE categories @> ARRAY[(SELECT name FROM categories WHERE id = $1)]",
+      [id]
+    );
+
+    if (parseInt(productCheck.rows[0].count) > 0) {
+      return res.status(400).json({
+        message: 'نمی‌توان دسته‌بندی‌ای را حذف کرد که محصول دارد.'
+      });
+    }
+
+    const result = await pool.query('DELETE FROM categories WHERE id = $1', [id]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ message: 'دسته‌بندی پیدا نشد.' });
+    }
+
+    res.status(200).json({ message: 'دسته‌بندی با موفقیت حذف شد.' });
+  } catch (err) {
+    console.error('خطا در حذف دسته‌بندی:', err.message);
+    res.status(500).json({ message: 'خطا در حذف دسته‌بندی' });
+  }
+});
+
+// ==== API ENDPOINTS برای BANNER MANAGEMENT ====
+
+// دریافت تمام banners
+app.get('/api/admin/banners', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM banners ORDER BY display_order ASC, id ASC');
+    res.status(200).json(result.rows);
+  } catch (err) {
+    console.error('خطا در دریافت banners:', err.message);
+    res.status(500).json({ message: 'خطا در دریافت بنرها' });
+  }
+});
+
+// دریافت banners فعال برای frontend
+app.get('/api/gift-shop/banners', async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM banners WHERE is_active = true ORDER BY display_order ASC'
+    );
+
+    // گروه‌بندی بر اساس نوع
+    const banners = {
+      offer_left: result.rows.find(b => b.type === 'offer_left'),
+      offer_right: result.rows.find(b => b.type === 'offer_right'),
+      summer: result.rows.find(b => b.type === 'summer')
+    };
+
+    res.status(200).json(banners);
+  } catch (err) {
+    console.error('خطا در دریافت banners:', err.message);
+    res.status(500).json({ message: 'خطا در دریافت بنرها' });
+  }
+});
+
+// ایجاد banner جدید
+app.post('/api/admin/banners', async (req, res) => {
+  const { name, type, title, subtitle, description, buttonText, buttonLink, imageUrl, displayOrder } = req.body;
+
+  if (!name || !type) {
+    return res.status(400).json({ message: 'نام و نوع بنر الزامی هستند.' });
+  }
+
+  try {
+    const result = await pool.query(
+      `INSERT INTO banners (name, type, title, subtitle, description, button_text, button_link, image_url, display_order) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
+       RETURNING *`,
+      [name, type, title, subtitle, description, buttonText, buttonLink, imageUrl, displayOrder || 0]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('خطا در ایجاد banner:', err.message);
+    res.status(500).json({ message: 'خطا در ایجاد بنر جدید' });
+  }
+});
+
+// بروزرسانی banner
+app.put('/api/admin/banners/:id', async (req, res) => {
+  const { id } = req.params;
+  const { name, type, title, subtitle, description, buttonText, buttonLink, imageUrl, displayOrder, isActive } = req.body;
+
+  try {
+    const result = await pool.query(
+      `UPDATE banners 
+       SET name = $1, type = $2, title = $3, subtitle = $4, description = $5, 
+           button_text = $6, button_link = $7, image_url = $8, display_order = $9, is_active = $10
+       WHERE id = $11 
+       RETURNING *`,
+      [name, type, title, subtitle, description, buttonText, buttonLink, imageUrl, displayOrder, isActive, id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'بنر پیدا نشد.' });
+    }
+
+    res.status(200).json(result.rows[0]);
+  } catch (err) {
+    console.error('خطا در بروزرسانی banner:', err.message);
+    res.status(500).json({ message: 'خطا در بروزرسانی بنر' });
+  }
+});
+
+// حذف banner
+app.delete('/api/admin/banners/:id', async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const result = await pool.query('DELETE FROM banners WHERE id = $1', [id]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ message: 'بنر پیدا نشد.' });
+    }
+
+    res.status(200).json({ message: 'بنر با موفقیت حذف شد.' });
+  } catch (err) {
+    console.error('خطا در حذف banner:', err.message);
+    res.status(500).json({ message: 'خطا در حذف بنر' });
   }
 });
 

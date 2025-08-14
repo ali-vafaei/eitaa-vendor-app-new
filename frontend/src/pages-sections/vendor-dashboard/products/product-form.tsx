@@ -165,7 +165,7 @@ export default function ProductForm({ productToEdit, onSave, onCancel, isSubmitt
 
         console.log('📤 FormData created, sending to backend...');
 
-        const uploadResponse = await fetch('https://localhost:4000/api/upload-multiple', {
+        const uploadResponse = await fetch('http://localhost:4000/api/upload-multiple', {
           method: 'POST',
           body: formData,
         });

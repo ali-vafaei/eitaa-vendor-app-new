@@ -3,6 +3,16 @@ import duotone from "icons/duotone";
 export const navigation = [
   { type: "label", label: "Admin" },
   { name: "Dashboard", icon: duotone.Dashboard, path: "/vendor/dashboard" },
+     // 🆕 Content Management اضافه شده
+  {
+    name: "Content Management",
+    icon: duotone.ElementHub,
+    children: [
+      { name: "Homepage Carousel", path: "/admin/carousel" },
+      { name: "Services", path: "/admin/services" },
+      { name: "Banners", path: "/admin/banners" } // 🆕 اضافه شده
+    ]
+  },
 
   {
     name: "Products",
