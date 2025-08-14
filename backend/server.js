@@ -4,10 +4,43 @@ const bcrypt = require('bcrypt');
 const cors = require('cors');
 const multer = require('multer'); // ✨ کتابخانه جدید برای آپلود فایل
 const path = require('path');   // ✨ کتابخانه داخلی نود برای کار با مسیرها
-const fs = require('fs');       // ✨ اضافه شد برای ایجاد پوشه
+const sharp = require('sharp'); // برای تغییر سایز تصاویر
+const fs = require('fs-extra');
+const fileType = require('file-type');
+const mimeTypes = require('mime-types');
 const app = express();
 const port = 4000;
 const saltRounds = 10;
+
+  // ========================= UPLOAD CONFIGURATION =========================
+  const UPLOAD_CONFIG = {
+    // مسیر اصلی آپلود
+    UPLOAD_DIR: 'uploads',
+    MEDIA_DIR: 'uploads/media',
+    THUMBNAILS_DIR: 'uploads/thumbnails',
+
+    // حداکثر سایز فایل (10MB)
+    MAX_FILE_SIZE: 10 * 1024 * 1024,
+
+    // فرمت‌های مجاز
+    ALLOWED_MIME_TYPES: [
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
+      'image/gif',
+      'image/webp',
+      'video/mp4',
+      'video/webm',
+      'application/pdf'
+    ],
+
+    // سایزهای thumbnail
+    THUMBNAIL_SIZES: {
+      small: { width: 150, height: 150 },
+      medium: { width: 300, height: 300 },
+      large: { width: 600, height: 600 }
+    }
+  };
 
 app.use(cors({
   origin: [
@@ -31,9 +64,12 @@ if (!fs.existsSync(uploadsDir)) {
   console.log('📁 Uploads directory created successfully!');
 }
 
-// ✨ بخش جدید: سرور کردن فایل‌های استاتیک از پوشه uploads
-// این کد به مرورگر اجازه می‌دهد عکس‌های آپلود شده را ببیند
+// ========================= ENHANCED STATIC FILE SERVING =========================
+// سرو کردن فایل‌های media با کنترل دسترسی
+
+app.use('/uploads/thumbnails', express.static(UPLOAD_CONFIG.THUMBNAILS_DIR));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 
 // ✨ سرو کردن عکس‌های اصلی قالب از فرانت‌اند
 const frontendAssetsPath = path.join(__dirname, '../frontend/public');
@@ -52,6 +88,162 @@ const testImagePath = path.join(frontendAssetsPath, 'assets', 'images', 'product
 console.log('🧪 Test image path:', testImagePath);
 console.log('🧪 Test image exists:', fs.existsSync(testImagePath));
 
+// ========================= UTILITIES =========================
+
+// ایجاد پوشه‌های مورد نیاز
+const ensureDirectories = async () => {
+  try {
+    await fs.ensureDir(UPLOAD_CONFIG.MEDIA_DIR);
+    await fs.ensureDir(UPLOAD_CONFIG.THUMBNAILS_DIR);
+    console.log('✅ Upload directories created successfully');
+  } catch (error) {
+    console.error('❌ Error creating upload directories:', error);
+  }
+};
+
+// تولید نام یکتا برای فایل
+const generateUniqueFilename = (originalName) => {
+  const timestamp = Date.now();
+  const random = Math.round(Math.random() * 1E9);
+  const ext = path.extname(originalName);
+  return `${timestamp}-${random}${ext}`;
+};
+
+// بررسی نوع فایل با file-type
+const validateFileType = async (filePath) => {
+  try {
+    const fileTypeResult = await fileType.fromFile(filePath);
+    return fileTypeResult && UPLOAD_CONFIG.ALLOWED_MIME_TYPES.includes(fileTypeResult.mime);
+  } catch (error) {
+    return false;
+  }
+};
+
+// تولید thumbnail برای تصاویر
+const generateThumbnails = async (inputPath, filename) => {
+  const thumbnails = {};
+  const nameWithoutExt = path.parse(filename).name;
+
+  try {
+    for (const [size, dimensions] of Object.entries(UPLOAD_CONFIG.THUMBNAIL_SIZES)) {
+      const outputPath = path.join(
+        UPLOAD_CONFIG.THUMBNAILS_DIR,
+        `${nameWithoutExt}-${size}.jpg`
+      );
+
+      await sharp(inputPath)
+        .resize(dimensions.width, dimensions.height, {
+          fit: 'cover',
+          position: 'center'
+        })
+        .jpeg({ quality: 80 })
+        .toFile(outputPath);
+
+      thumbnails[size] = `/uploads/thumbnails/${path.basename(outputPath)}`;
+    }
+
+    return thumbnails;
+  } catch (error) {
+    console.error('Error generating thumbnails:', error);
+    return {};
+  }
+};
+
+// فشرده‌سازی تصاویر
+const optimizeImage = async (inputPath, outputPath, mimeType) => {
+  try {
+    const image = sharp(inputPath);
+
+    switch (mimeType) {
+      case 'image/jpeg':
+      case 'image/jpg':
+        await image
+          .jpeg({ quality: 85, progressive: true })
+          .toFile(outputPath);
+        break;
+
+      case 'image/png':
+        await image
+          .png({ quality: 85, progressive: true })
+          .toFile(outputPath);
+        break;
+
+      case 'image/webp':
+        await image
+          .webp({ quality: 85 })
+          .toFile(outputPath);
+        break;
+
+      default:
+        // برای سایر فرمت‌ها فقط کپی کن
+        await fs.copy(inputPath, outputPath);
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error optimizing image:', error);
+    return false;
+  }
+};
+// ========================= MIDDLEWARE =========================
+
+// Middleware برای بررسی دقیق‌تر فایل‌ها بعد از آپلود
+const validateUploadedFiles = async (req, res, next) => {
+  if (!req.files || req.files.length === 0) {
+    return next();
+  }
+
+  const validFiles = [];
+  const invalidFiles = [];
+
+  for (const file of req.files) {
+    try {
+      // بررسی نوع فایل با file-type
+      const isValidType = await validateFileType(file.path);
+
+      if (isValidType) {
+        validFiles.push(file);
+      } else {
+        invalidFiles.push(file);
+        // حذف فایل نامعتبر
+        await fs.unlink(file.path);
+      }
+    } catch (error) {
+      console.error('Error validating file:', error);
+      invalidFiles.push(file);
+      try {
+        await fs.unlink(file.path);
+      } catch (unlinkError) {
+        console.error('Error deleting invalid file:', unlinkError);
+      }
+    }
+  }
+
+  if (invalidFiles.length > 0) {
+    return res.status(400).json({
+      message: `${invalidFiles.length} فایل نامعتبر حذف شد`,
+      invalidFiles: invalidFiles.map(f => f.originalname)
+    });
+  }
+
+  req.files = validFiles;
+  next();
+};
+
+// Middleware برای محدود کردن دسترسی به فایل‌ها
+const protectMediaAccess = (req, res, next) => {
+  const filePath = req.path;
+
+  // فقط فایل‌های موجود در دیتابیس قابل دسترسی هستند
+  // این middleware را می‌توان برای کنترل دسترسی استفاده کرد
+
+  next();
+};
+
+
+app.use('/uploads/media', protectMediaAccess, express.static(UPLOAD_CONFIG.MEDIA_DIR));
+
+//======//
 app.get('/uploads', (req, res) => {
   const fs = require('fs');
   try {
@@ -95,7 +287,7 @@ app.get('/api/check-assets', (req, res) => {
     });
   }
 });
-
+/*
 // --- ✨ بخش جدید: تنظیمات Multer برای ذخیره فایل‌ها ---
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
@@ -127,6 +319,38 @@ const upload = multer({
     }
   }
 });
+
+*/
+
+  const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+      cb(null, UPLOAD_CONFIG.MEDIA_DIR);
+    },
+    filename: (req, file, cb) => {
+      const uniqueName = generateUniqueFilename(file.originalname);
+      cb(null, uniqueName);
+    }
+  });
+
+  const fileFilter = (req, file, cb) => {
+    // بررسی اولیه MIME type
+    if (UPLOAD_CONFIG.ALLOWED_MIME_TYPES.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`نوع فایل ${file.mimetype} مجاز نیست`), false);
+    }
+  };
+
+  const upload = multer({
+    storage: storage,
+    limits: {
+      fileSize: UPLOAD_CONFIG.MAX_FILE_SIZE,
+      files: 10 // حداکثر 10 فایل در هر درخواست
+    },
+    fileFilter: fileFilter
+  });;
+
+
 
 // ✨ تابع helper برای اصلاح URL های عکس
 const fixImageUrls = (product) => {
@@ -532,6 +756,274 @@ app.post('/api/auth/login', async (req, res) => {
         res.status(500).json({ message: 'خطا در فرآیند ورود فروشنده' });
     }
 });
+
+
+
+  // ========================= MEDIA ENDPOINTS =========================
+
+  // دریافت لیست تمام فایل‌های مدیا با صفحه‌بندی و فیلتر
+  app.get('/api/media', async (req, res) => {
+    try {
+      const { page = 1, limit = 20, search = '', mimeType = '' } = req.query;
+      const offset = (page - 1) * limit;
+
+      let whereClause = 'WHERE deleted_at IS NULL';
+      const queryParams = [];
+      let paramCount = 0;
+
+      // فیلتر بر اساس جستجو در نام یا عنوان
+      if (search) {
+        paramCount++;
+        whereClause += ` AND (original_name ILIKE $${paramCount} OR title ILIKE $${paramCount})`;
+        queryParams.push(`%${search}%`);
+      }
+
+      // فیلتر بر اساس نوع فایل
+      if (mimeType) {
+        paramCount++;
+        whereClause += ` AND mime_type LIKE $${paramCount}`;
+        queryParams.push(`${mimeType}%`);
+      }
+
+      // کوئری اصلی
+      paramCount++;
+      queryParams.push(parseInt(limit));
+      paramCount++;
+      queryParams.push(offset);
+
+      const query = `
+        SELECT id, filename, original_name, file_url, file_size, mime_type, 
+               alt_text, title, caption, width, height, created_at
+        FROM media 
+        ${whereClause}
+        ORDER BY created_at DESC 
+        LIMIT $${paramCount - 1} OFFSET $${paramCount}
+      `;
+
+      const result = await pool.query(query, queryParams);
+
+      // شمارش کل رکوردها برای pagination
+      const countQuery = `SELECT COUNT(*) FROM media ${whereClause}`;
+      const countResult = await pool.query(countQuery, queryParams.slice(0, -2));
+      const totalCount = parseInt(countResult.rows[0].count);
+
+      res.json({
+        data: result.rows,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total: totalCount,
+          totalPages: Math.ceil(totalCount / limit)
+        }
+      });
+    } catch (err) {
+      console.error(err.message);
+      res.status(500).json({ message: 'خطا در دریافت فایل‌ها' });
+    }
+  });
+
+  // ========================= ENHANCED UPLOAD ENDPOINT =========================
+app.post('/api/media/upload',
+  upload.array('files', 10),
+  validateUploadedFiles,
+  async (req, res) => {
+    try {
+      if (!req.files || req.files.length === 0) {
+        return res.status(400).json({ message: 'هیچ فایل معتبری آپلود نشده' });
+      }
+
+      const uploadedFiles = [];
+
+      for (const file of req.files) {
+        let width = null, height = null, thumbnails = {};
+
+        // بررسی اینکه آیا فایل تصویر است
+        if (file.mimetype.startsWith('image/')) {
+          try {
+            // دریافت ابعاد اصلی
+            const metadata = await sharp(file.path).metadata();
+            width = metadata.width;
+            height = metadata.height;
+
+            // بهینه‌سازی تصویر
+            const optimizedPath = path.join(
+              UPLOAD_CONFIG.MEDIA_DIR,
+              `optimized-${file.filename}`
+            );
+
+            const optimized = await optimizeImage(file.path, optimizedPath, file.mimetype);
+
+            if (optimized) {
+              // جایگزین کردن فایل اصلی با نسخه بهینه‌شده
+              await fs.unlink(file.path);
+              await fs.move(optimizedPath, file.path);
+            }
+
+            // تولید thumbnail ها
+            thumbnails = await generateThumbnails(file.path, file.filename);
+
+          } catch (error) {
+            console.error('Error processing image:', error);
+          }
+        }
+
+        // دریافت سایز نهایی فایل
+        const stats = await fs.stat(file.path);
+
+        // ذخیره در دیتابیس
+        const result = await pool.query(
+          `INSERT INTO media (
+            filename, original_name, file_path, file_url, file_size, 
+            mime_type, width, height, thumbnails, uploaded_by
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+          [
+            file.filename,
+            file.originalname,
+            file.path,
+            `/uploads/media/${file.filename}`,
+            stats.size,
+            file.mimetype,
+            width,
+            height,
+            JSON.stringify(thumbnails),
+            req.user?.id || 1
+          ]
+        );
+
+        uploadedFiles.push({
+          ...result.rows[0],
+          thumbnails
+        });
+      }
+
+      res.status(201).json({
+        message: 'فایل‌ها با موفقیت آپلود شدند',
+        files: uploadedFiles
+      });
+
+    } catch (error) {
+      console.error('Upload error:', error);
+
+      // پاک‌سازی فایل‌های آپلود شده در صورت خطا
+      if (req.files) {
+        for (const file of req.files) {
+          try {
+            await fs.unlink(file.path);
+          } catch (unlinkError) {
+            console.error('Error cleaning up file:', unlinkError);
+          }
+        }
+      }
+
+      res.status(500).json({ message: 'خطا در آپلود فایل' });
+    }
+  }
+);
+
+  // به‌روزرسانی اطلاعات فایل (alt text, title, caption)
+  app.put('/api/media/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { alt_text, title, caption } = req.body;
+
+      const result = await pool.query(
+        `UPDATE media SET alt_text = $1, title = $2, caption = $3, updated_at = CURRENT_TIMESTAMP 
+         WHERE id = $4 AND deleted_at IS NULL RETURNING *`,
+        [alt_text, title, caption, id]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ message: 'فایل یافت نشد' });
+      }
+
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error(err.message);
+      res.status(500).json({ message: 'خطا در به‌روزرسانی فایل' });
+    }
+  });
+
+  // حذف فایل (soft delete)
+  app.delete('/api/media/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const result = await pool.query(
+        'UPDATE media SET deleted_at = CURRENT_TIMESTAMP WHERE id = $1 AND deleted_at IS NULL RETURNING *',
+        [id]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ message: 'فایل یافت نشد' });
+      }
+
+      res.json({ message: 'فایل با موفقیت حذف شد' });
+    } catch (err) {
+      console.error(err.message);
+      res.status(500).json({ message: 'خطا در حذف فایل' });
+    }
+  });
+
+  // ========================= CAROUSEL ENDPOINTS =========================
+
+  // دریافت لیست carousel items
+  app.get('/api/carousel', async (req, res) => {
+    try {
+      const result = await pool.query(
+        `SELECT c.*, m.file_url as image_url, m.alt_text, m.width, m.height
+         FROM carousel_items c
+         LEFT JOIN media m ON c.media_id = m.id
+         WHERE c.is_active = true
+         ORDER BY c.display_order ASC`
+      );
+      res.json(result.rows);
+    } catch (err) {
+      console.error(err.message);
+      res.status(500).json({ message: 'خطا در دریافت اسلایدها' });
+    }
+  });
+
+  // ایجاد/ویرایش carousel item
+  app.post('/api/carousel', async (req, res) => {
+    try {
+      const { title, subtitle, description, media_id, link_url, link_text, display_order } = req.body;
+
+      const result = await pool.query(
+        `INSERT INTO carousel_items (title, subtitle, description, media_id, link_url, link_text, display_order)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+        [title, subtitle, description, media_id, link_url, link_text, display_order || 0]
+      );
+
+      res.status(201).json(result.rows[0]);
+    } catch (err) {
+      console.error(err.message);
+      res.status(500).json({ message: 'خطا در ایجاد اسلاید' });
+    }
+  });
+
+  app.put('/api/carousel/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { title, subtitle, description, media_id, link_url, link_text, display_order } = req.body;
+
+      const result = await pool.query(
+        `UPDATE carousel_items 
+         SET title = $1, subtitle = $2, description = $3, media_id = $4, 
+             link_url = $5, link_text = $6, display_order = $7, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $8 RETURNING *`,
+        [title, subtitle, description, media_id, link_url, link_text, display_order, id]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ message: 'اسلاید یافت نشد' });
+      }
+
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error(err.message);
+      res.status(500).json({ message: 'خطا در ویرایش اسلاید' });
+    }
+  });
 
 // --- بخش مدیریت کتگوری‌ها ---
 
@@ -1569,6 +2061,361 @@ app.get('/api/fashion-3/brands', async (req, res) => {
 });
 
 
+// ========================= PRODUCT MEDIA ENDPOINTS =========================
+
+// دریافت تصاویر یک محصول
+app.get('/api/products/:productId/media', async (req, res) => {
+  try {
+    const { productId } = req.params;
+
+    const result = await pool.query(
+      `SELECT pm.*, m.* 
+       FROM product_media pm
+       JOIN media m ON pm.media_id = m.id
+       WHERE pm.product_id = $1 AND m.deleted_at IS NULL
+       ORDER BY pm.is_primary DESC, pm.display_order ASC`,
+      [productId]
+    );
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'خطا در دریافت تصاویر محصول' });
+  }
+});
+
+// افزودن تصویر به محصول
+app.post('/api/products/:productId/media', async (req, res) => {
+  try {
+    const { productId } = req.params;
+    const { media_id, is_primary = false, display_order = 0 } = req.body;
+
+    // اگر این تصویر اصلی است، سایر تصاویر را غیراصلی کن
+    if (is_primary) {
+      await pool.query(
+        'UPDATE product_media SET is_primary = false WHERE product_id = $1',
+        [productId]
+      );
+    }
+
+    const result = await pool.query(
+      `INSERT INTO product_media (product_id, media_id, is_primary, display_order)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [productId, media_id, is_primary, display_order]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'خطا در افزودن تصویر به محصول' });
+  }
+});
+
+// حذف همه تصاویر یک محصول
+app.delete('/api/products/:productId/media', async (req, res) => {
+  try {
+    const { productId } = req.params;
+
+    await pool.query('DELETE FROM product_media WHERE product_id = $1', [productId]);
+
+    res.json({ message: 'تصاویر محصول حذف شدند' });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'خطا در حذف تصاویر محصول' });
+  }
+});
+
+// حذف یک تصویر خاص از محصول
+app.delete('/api/products/:productId/media/:mediaId', async (req, res) => {
+  try {
+    const { productId, mediaId } = req.params;
+
+    const result = await pool.query(
+      'DELETE FROM product_media WHERE product_id = $1 AND media_id = $2 RETURNING *',
+      [productId, mediaId]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ message: 'ارتباط تصویر با محصول یافت نشد' });
+    }
+
+    res.json({ message: 'تصویر از محصول حذف شد' });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'خطا در حذف تصویر از محصول' });
+  }
+});
+
+// تنظیم تصویر اصلی محصول
+app.put('/api/products/:productId/media/:mediaId/primary', async (req, res) => {
+  try {
+    const { productId, mediaId } = req.params;
+
+    // ابتدا همه تصاویر را غیراصلی کن
+    await pool.query(
+      'UPDATE product_media SET is_primary = false WHERE product_id = $1',
+      [productId]
+    );
+
+    // تصویر مورد نظر را اصلی کن
+    const result = await pool.query(
+      'UPDATE product_media SET is_primary = true WHERE product_id = $1 AND media_id = $2 RETURNING *',
+      [productId, mediaId]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ message: 'ارتباط تصویر با محصول یافت نشد' });
+    }
+
+    res.json({ message: 'تصویر اصلی تنظیم شد' });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'خطا در تنظیم تصویر اصلی' });
+  }
+});
+
+// ========================= CATEGORY MEDIA ENDPOINTS =========================
+
+// دریافت تصویر یک دسته‌بندی
+app.get('/api/categories/:categoryId/media', async (req, res) => {
+  try {
+    const { categoryId } = req.params;
+
+    const result = await pool.query(
+      `SELECT c.*, m.* 
+       FROM categories c
+       LEFT JOIN media m ON c.media_id = m.id
+       WHERE c.id = $1 AND (m.deleted_at IS NULL OR m.deleted_at IS NULL)`,
+      [categoryId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'دسته‌بندی یافت نشد' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'خطا در دریافت تصویر دسته‌بندی' });
+  }
+});
+
+// تنظیم تصویر دسته‌بندی
+app.put('/api/categories/:categoryId/media', async (req, res) => {
+  try {
+    const { categoryId } = req.params;
+    const { media_id } = req.body;
+
+    const result = await pool.query(
+      'UPDATE categories SET media_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *',
+      [media_id, categoryId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'دسته‌بندی یافت نشد' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'خطا در تنظیم تصویر دسته‌بندی' });
+  }
+});
+
+// ========================= BANNER MEDIA ENDPOINTS =========================
+
+// دریافت لیست بنرها
+app.get('/api/banners', async (req, res) => {
+  try {
+    const { banner_type = '' } = req.query;
+
+    let whereClause = 'WHERE bm.is_active = true AND m.deleted_at IS NULL';
+    const queryParams = [];
+
+    if (banner_type) {
+      queryParams.push(banner_type);
+      whereClause += ` AND bm.banner_type = $${queryParams.length}`;
+    }
+
+    const result = await pool.query(
+      `SELECT bm.*, m.file_url, m.alt_text, m.width, m.height
+       FROM banner_media bm
+       JOIN media m ON bm.media_id = m.id
+       ${whereClause}
+       ORDER BY bm.display_order ASC`,
+      queryParams
+    );
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'خطا در دریافت بنرها' });
+  }
+});
+
+// ایجاد بنر جدید
+app.post('/api/banners', async (req, res) => {
+  try {
+    const { media_id, banner_type, display_order = 0 } = req.body;
+
+    const result = await pool.query(
+      `INSERT INTO banner_media (media_id, banner_type, display_order)
+       VALUES ($1, $2, $3) RETURNING *`,
+      [media_id, banner_type, display_order]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'خطا در ایجاد بنر' });
+  }
+});
+
+// ویرایش بنر
+app.put('/api/banners/:bannerId', async (req, res) => {
+  try {
+    const { bannerId } = req.params;
+    const { media_id, banner_type, display_order, is_active } = req.body;
+
+    const result = await pool.query(
+      `UPDATE banner_media 
+       SET media_id = $1, banner_type = $2, display_order = $3, is_active = $4
+       WHERE id = $5 RETURNING *`,
+      [media_id, banner_type, display_order, is_active, bannerId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'بنر یافت نشد' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'خطا در ویرایش بنر' });
+  }
+});
+
+// حذف بنر
+app.delete('/api/banners/:bannerId', async (req, res) => {
+  try {
+    const { bannerId } = req.params;
+
+    const result = await pool.query(
+      'DELETE FROM banner_media WHERE id = $1 RETURNING *',
+      [bannerId]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ message: 'بنر یافت نشد' });
+    }
+
+    res.json({ message: 'بنر حذف شد' });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'خطا در حذف بنر' });
+  }
+});
+
+// ========================= MEDIA USAGE ENDPOINTS =========================
+
+// دریافت آمار استفاده از یک فایل رسانه
+app.get('/api/media/:mediaId/usage', async (req, res) => {
+  try {
+    const { mediaId } = req.params;
+
+    // بررسی استفاده در carousel
+    const carouselUsage = await pool.query(
+      'SELECT COUNT(*) as count FROM carousel_items WHERE media_id = $1',
+      [mediaId]
+    );
+
+    // بررسی استفاده در محصولات
+    const productUsage = await pool.query(
+      'SELECT COUNT(*) as count FROM product_media WHERE media_id = $1',
+      [mediaId]
+    );
+
+    // بررسی استفاده در دسته‌بندی‌ها
+    const categoryUsage = await pool.query(
+      'SELECT COUNT(*) as count FROM categories WHERE media_id = $1',
+      [mediaId]
+    );
+
+    // بررسی استفاده در بنرها
+    const bannerUsage = await pool.query(
+      'SELECT COUNT(*) as count FROM banner_media WHERE media_id = $1',
+      [mediaId]
+    );
+
+    const usage = {
+      carousel: parseInt(carouselUsage.rows[0].count),
+      products: parseInt(productUsage.rows[0].count),
+      categories: parseInt(categoryUsage.rows[0].count),
+      banners: parseInt(bannerUsage.rows[0].count),
+      total: parseInt(carouselUsage.rows[0].count) +
+             parseInt(productUsage.rows[0].count) +
+             parseInt(categoryUsage.rows[0].count) +
+             parseInt(bannerUsage.rows[0].count)
+    };
+
+    res.json(usage);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'خطا در دریافت آمار استفاده' });
+  }
+});
+
+// دریافت جزئیات استفاده از یک فایل رسانه
+app.get('/api/media/:mediaId/usage/details', async (req, res) => {
+  try {
+    const { mediaId } = req.params;
+
+    const details = {
+      carousel: [],
+      products: [],
+      categories: [],
+      banners: []
+    };
+
+    // استفاده در carousel
+    const carouselResult = await pool.query(
+      'SELECT id, title FROM carousel_items WHERE media_id = $1',
+      [mediaId]
+    );
+    details.carousel = carouselResult.rows;
+
+    // استفاده در محصولات
+    const productResult = await pool.query(
+      `SELECT p.id, p.name, pm.is_primary 
+       FROM products p 
+       JOIN product_media pm ON p.id = pm.product_id 
+       WHERE pm.media_id = $1`,
+      [mediaId]
+    );
+    details.products = productResult.rows;
+
+    // استفاده در دسته‌بندی‌ها
+    const categoryResult = await pool.query(
+      'SELECT id, name FROM categories WHERE media_id = $1',
+      [mediaId]
+    );
+    details.categories = categoryResult.rows;
+
+    // استفاده در بنرها
+    const bannerResult = await pool.query(
+      'SELECT id, banner_type FROM banner_media WHERE media_id = $1',
+      [mediaId]
+    );
+    details.banners = bannerResult.rows;
+
+    res.json(details);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'خطا در دریافت جزئیات استفاده' });
+  }
+});
+
+
 // =================================================================
 // ### اندپوینت‌های صفحه Market-1 ###
 // =================================================================
@@ -2249,6 +3096,29 @@ app.get('/api/add-test-images/:id', async (req, res) => {
     res.status(500).json({ message: 'خطا در اضافه کردن عکس‌های تست' });
   }
 });
+// ========================= DATABASE SCHEMA UPDATE =========================
+const updateMediaTable = async () => {
+  try {
+    // اضافه کردن ستون thumbnails اگر وجود ندارد
+    await pool.query(`
+      ALTER TABLE media 
+      ADD COLUMN IF NOT EXISTS thumbnails JSONB DEFAULT '{}'::jsonb
+    `);
+    console.log('✅ Media table updated successfully');
+  } catch (error) {
+    console.log('⚠️ Media table update info:', error.message);
+  }
+};
+
+// ========================= INITIALIZATION =========================
+// اطمینان از وجود پوشه‌ها و بروزرسانی دیتابیس هنگام شروع سرور
+const initializeServer = async () => {
+  await ensureDirectories();
+  await updateMediaTable();
+};
+
+// فراخوانی initialization
+initializeServer();
 
 // --- شروع سرور ---
 app.listen(port, () => {

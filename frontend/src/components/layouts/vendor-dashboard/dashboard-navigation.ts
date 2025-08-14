@@ -1,4 +1,5 @@
 import duotone from "icons/duotone";
+import { PhotoLibrary } from '@mui/icons-material';
 
 export const navigation = [
   { type: "label", label: "Admin" },
@@ -32,6 +33,8 @@ export const navigation = [
       { name: "Create Category", path: "/admin/categories/create" }
     ]
   },
+
+  { name: "Media Library", icon: PhotoLibrary, path: "/admin/media", iconText: "M" },
 
   {
     name: "Brands",
