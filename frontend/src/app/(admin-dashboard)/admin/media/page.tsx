@@ -87,7 +87,26 @@ function TabPanel(props: TabPanelProps) {
 // ========================= MEDIA LIBRARY PAGE =========================
 export default function MediaLibraryPage() {
   const [currentTab, setCurrentTab] = useState(0);
-  const [stats, setStats] = useState<MediaStats | null>(null);
+  const [stats, setStats] = useState({
+  totalFiles: 0,
+  totalSize: 0,
+  storageUsed: 0,
+  storageLimit: 1000000000,
+  storageUsedPercentage: 0,
+  storage_usage: {
+    used: 0,
+    total: 1000000000,
+    percentage: 0
+  },
+  categories: {
+    images: 0,
+    videos: 0,
+    audio: 0,
+    documents: 0,
+    others: 0
+  },
+  recentUploads: []
+});
   const [activityLog, setActivityLog] = useState<ActivityLog[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
@@ -99,12 +118,46 @@ export default function MediaLibraryPage() {
   const fetchStats = async () => {
     try {
       const response = await fetch('/api/media/stats');
-      if (response.ok) {
-        const data = await response.json();
-        setStats(data);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
+      const rawData = await response.json();
+
+      // تبدیل ساختار داده از backend به آنچه frontend انتظار دارد
+      const transformedStats = {
+        totalFiles: rawData.totalFiles || 0,
+        totalSize: rawData.totalSize || 0,
+        storageUsed: rawData.storageUsed || 0,
+        storageLimit: rawData.storageLimit || 1000000000,
+        storageUsedPercentage: rawData.storageUsedPercentage || 0,
+
+        // برای سازگاری با کد قدیمی
+        storage_usage: {
+          used: rawData.storageUsed || 0,
+          total: rawData.storageLimit || 1000000000,
+          percentage: rawData.storageUsedPercentage || 0
+        },
+
+        categories: {
+          images: rawData.categories?.images || 0,
+          videos: rawData.categories?.videos || 0,
+          audio: rawData.categories?.audio || 0,
+          documents: rawData.categories?.documents || 0,
+          others: rawData.categories?.others || 0
+        },
+
+        recentUploads: rawData.recentUploads || []
+      };
+
+      console.log('✅ Stats transformed:', transformedStats);
+      setStats(transformedStats);
+
     } catch (error) {
-      console.error('Error fetching stats:', error);
+      console.error('❌ Error fetching stats:', error);
+      setError('خطا در دریافت آمار فایل‌ها');
+
+      // در صورت خطا، مقادیر پیش‌فرض که قبلا در useState تعریف کردیم باقی می‌مانند
+      // نیازی به setStats مجدد نیست
     }
   };
 
@@ -114,8 +167,8 @@ export default function MediaLibraryPage() {
       const response = await fetch('/api/media/activity');
       if (response.ok) {
         const data = await response.json();
-        setActivityLog(data);
-      }
+      setActivityLog(data.activities || []);
+     }
     } catch (error) {
       console.error('Error fetching activity log:', error);
     }
@@ -228,6 +281,11 @@ export default function MediaLibraryPage() {
       </Box>
     );
   }
+    const storageData = {
+      used: stats?.storageUsed || 0,
+      total: stats?.storageLimit || 1000000000,
+      percentage: stats?.storageUsedPercentage || 0
+    };
 
   return (
     <Box>
@@ -370,32 +428,33 @@ export default function MediaLibraryPage() {
             <Card>
               <CardContent>
                 <Typography variant="h6" mb={2}>فضای ذخیره‌سازی</Typography>
-                <Box mb={2}>
-                  <Box display="flex" justifyContent="space-between" mb={1}>
+                {/* ✅ این بخش به طور کامل با کد جدید جایگزین می‌شود */}
+                <Box>
+                  <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
                     <Typography variant="body2">استفاده شده</Typography>
                     <Typography variant="body2">
-                      {formatFileSize(stats.storage_usage.used)} / {formatFileSize(stats.storage_usage.total)}
+                      {formatFileSize(storageData.used)} / {formatFileSize(storageData.total)}
                     </Typography>
                   </Box>
                   <LinearProgress
                     variant="determinate"
-                    value={stats.storage_usage.percentage}
+                    value={storageData.percentage}
                     sx={{ height: 8, borderRadius: 4 }}
-                    color={stats.storage_usage.percentage > 90 ? 'error' :
-                           stats.storage_usage.percentage > 70 ? 'warning' : 'primary'}
                   />
-                  <Typography variant="caption" display="block" textAlign="center" mt={1}>
-                    {stats.storage_usage.percentage.toFixed(1)}% استفاده شده
+                  <Typography variant="caption" color="text.secondary" mt={1}>
+                    {storageData.percentage}% استفاده شده
                   </Typography>
                 </Box>
-                {stats.storage_usage.percentage > 90 && (
-                  <Alert severity="warning" size="small">
+                {/* این بخش برای نمایش هشدار فضای پر، از قبل وجود داشت و صحیح است */}
+                {storageData.percentage > 90 && (
+                  <Alert severity="warning" sx={{ mt: 2, p: 1 }}>
                     فضای ذخیره‌سازی تقریباً پر است
                   </Alert>
                 )}
               </CardContent>
             </Card>
           </Grid>
+                  {}
         </Grid>
       )}
 
